@@ -1,0 +1,469 @@
+{
+ "version": 1,
+ "plates": {
+  "Anthochaera carunculata": {
+   "file": "Anthochaera carunculata - 1782-1825 - Print - Iconographia Zoologica - Special Collections University of Amsterdam - UBA01 IZ19200045.tif",
+   "box": [
+    0.6391,
+    0.2562,
+    0.9484,
+    0.693
+   ],
+   "focus": [
+    0.794,
+    0.44
+   ],
+   "source": "Iconographia Zoologica (Artis Library)",
+   "artist": "",
+   "license": "Public domain"
+  },
+  "Bubo virginianus": {
+   "file": "61 Great Horned Owl.jpg",
+   "box": [
+    0.0449,
+    0.1265,
+    0.915,
+    0.8764
+   ],
+   "focus": [
+    0.48,
+    0.441
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Cacatua galerita": {
+   "file": "Edward Lear - Plyctolophus Galeritus. Greater Sulphur-crested Cockatoo. - Google Art Project.jpg",
+   "box": [
+    0.0657,
+    0.0644,
+    0.9431,
+    0.9495
+   ],
+   "focus": [
+    0.504,
+    0.436
+   ],
+   "source": "Lear, Illustrations of the Family of Psittacidae (1832)",
+   "artist": "Edward Lear",
+   "license": "Public domain"
+  },
+  "Cardinalis cardinalis": {
+   "file": "159 Cardinal Grosbeak.jpg",
+   "box": [
+    0.2967,
+    0.3209,
+    0.7211,
+    0.678
+   ],
+   "focus": [
+    0.509,
+    0.471
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Chloris chloris": {
+   "file": "Emberiza chloris - 1753-1834 - Print - Iconographia Zoologica - Special Collections University of Amsterdam - UBA01 IZA1000262.tif",
+   "box": [
+    0.2178,
+    0.2037,
+    0.7593,
+    0.6824
+   ],
+   "focus": [
+    0.489,
+    0.405
+   ],
+   "source": "Iconographia Zoologica (Artis Library)",
+   "artist": "Isaac van Haastert",
+   "license": "Public domain"
+  },
+  "Columba palumbus": {
+   "file": "Keulemans Onze vogels 1 48.jpg",
+   "box": [
+    0.0264,
+    0.0449,
+    0.9663,
+    0.8933
+   ],
+   "focus": [
+    0.496,
+    0.401
+   ],
+   "source": "Keulemans, Onze vogels in huis en tuin (1869-76)",
+   "artist": "John Gerrard Keulemans",
+   "license": "Public domain"
+  },
+  "Corvus brachyrhynchos": {
+   "file": "156 American Crow.jpg",
+   "box": [
+    0.0631,
+    0.0405,
+    0.939,
+    0.9454
+   ],
+   "focus": [
+    0.501,
+    0.421
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Corvus corone": {
+   "file": "Corvus corone - 1790-1796 - Print - Iconographia Zoologica - Special Collections University of Amsterdam - UBA01 IZ15700215.tif",
+   "box": [
+    0.0751,
+    0.1563,
+    0.9463,
+    0.83
+   ],
+   "focus": [
+    0.511,
+    0.439
+   ],
+   "source": "Iconographia Zoologica (Artis Library)",
+   "artist": "François-Nicolas Martinet",
+   "license": "Public domain"
+  },
+  "Cracticus torquatus": {
+   "file": "The birds of Australia (16879357218).jpg",
+   "box": [
+    0.052,
+    0.0775,
+    0.9121,
+    0.9186
+   ],
+   "focus": [
+    0.482,
+    0.431
+   ],
+   "source": "Gould, The Birds of Australia",
+   "artist": "Broinowski, Gracius J.",
+   "license": "Public domain"
+  },
+  "Cyanistes caeruleus": {
+   "file": "GouldBirdsEuropeIIIBlue Tit.jpg",
+   "box": [
+    0.3002,
+    0.2362,
+    0.6853,
+    0.7232
+   ],
+   "focus": [
+    0.493,
+    0.441
+   ],
+   "source": "Gould, The Birds of Europe",
+   "artist": "J and E Gould  E Lear",
+   "license": "Public domain"
+  },
+  "Cyanocitta cristata": {
+   "file": "102 Blue Jay.jpg",
+   "box": [
+    0.1703,
+    0.2368,
+    0.8094,
+    0.79
+   ],
+   "focus": [
+    0.49,
+    0.469
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Dacelo novaeguineae": {
+   "file": "Dacelo gigas - 1820-1863 - Print - Iconographia Zoologica - Special Collections University of Amsterdam - UBA01 IZ16800175.tif",
+   "box": [
+    0.2078,
+    0.179,
+    0.775,
+    0.8082
+   ],
+   "focus": [
+    0.491,
+    0.443
+   ],
+   "source": "Iconographia Zoologica (Artis Library)",
+   "artist": "",
+   "license": "Public domain"
+  },
+  "Dryobates pubescens": {
+   "file": "112 Downy Woodpecker.jpg",
+   "box": [
+    0.1702,
+    0.1796,
+    0.7657,
+    0.7993
+   ],
+   "focus": [
+    0.468,
+    0.44
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Erithacus rubecula": {
+   "file": "GouldBirdsEuropeIIRobin.jpg",
+   "box": [
+    0.2142,
+    0.1952,
+    0.8613,
+    0.7157
+   ],
+   "focus": [
+    0.538,
+    0.414
+   ],
+   "source": "Gould, The Birds of Europe",
+   "artist": "J and E Gould E Lear",
+   "license": "Public domain"
+  },
+  "Fringilla coelebs": {
+   "file": "The birds of Europe (1837) (14749620464).jpg",
+   "box": [
+    0.0156,
+    0.0093,
+    0.9834,
+    0.9901
+   ],
+   "focus": [
+    0.499,
+    0.421
+   ],
+   "source": "Gould, The Birds of Europe",
+   "artist": "John Gould    /    Elizabeth Gould    /    Charles Joseph Hullmandel",
+   "license": "Public domain"
+  },
+  "Gymnorhina tibicen": {
+   "file": "The birds of Australia (16880930029).jpg",
+   "box": [
+    0.0472,
+    0.092,
+    0.9212,
+    0.8906
+   ],
+   "focus": [
+    0.484,
+    0.427
+   ],
+   "source": "Gould, The Birds of Australia",
+   "artist": "Broinowski, Gracius J.",
+   "license": "Public domain"
+  },
+  "Junco hyemalis": {
+   "file": "13 Snow Bird.jpg",
+   "box": [
+    0.3558,
+    0.3129,
+    0.7176,
+    0.6687
+   ],
+   "focus": [
+    0.537,
+    0.462
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Melospiza melodia": {
+   "file": "25 Song Sparrow.jpg",
+   "box": [
+    0.3286,
+    0.3215,
+    0.7136,
+    0.6348
+   ],
+   "focus": [
+    0.521,
+    0.453
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Ninox boobook": {
+   "file": "The birds of Australia (16444746064).jpg",
+   "box": [
+    0.0259,
+    0.0938,
+    0.8956,
+    0.8922
+   ],
+   "focus": [
+    0.461,
+    0.429
+   ],
+   "source": "Gould, The Birds of Australia",
+   "artist": "Broinowski, Gracius J.",
+   "license": "Public domain"
+  },
+  "Pardalotus punctatus": {
+   "file": "The birds of Australia (17041184346).jpg",
+   "box": [
+    0.1383,
+    0.1344,
+    0.8556,
+    0.8439
+   ],
+   "focus": [
+    0.497,
+    0.432
+   ],
+   "source": "Gould, The Birds of Australia",
+   "artist": "Broinowski, Gracius J.",
+   "license": "Public domain"
+  },
+  "Parus major": {
+   "file": "Coloured figures of the birds of the British Islands - issued by Lord Lilford (8291316278).jpg",
+   "box": [
+    0.0939,
+    0.0366,
+    0.904,
+    0.9397
+   ],
+   "focus": [
+    0.499,
+    0.416
+   ],
+   "source": "Lilford, Coloured Figures of the Birds of the British Islands",
+   "artist": "Keulemans, J. G.; Lilford, Thomas Littleton Powys; Newton, Alfred; Salvin, Osbert; Thorburn, Archibald",
+   "license": "Public domain"
+  },
+  "Passer domesticus": {
+   "file": "Keulemans Onze vogels 3 50.jpg",
+   "box": [
+    0.0586,
+    0.0993,
+    0.9273,
+    0.8909
+   ],
+   "focus": [
+    0.493,
+    0.432
+   ],
+   "source": "Keulemans, Onze vogels in huis en tuin (1869-76)",
+   "artist": "John Gerrard Keulemans",
+   "license": "Public domain"
+  },
+  "Poecile atricapillus": {
+   "file": "160 Black-capped Titmouse.jpg",
+   "box": [
+    0.3082,
+    0.3046,
+    0.7262,
+    0.6965
+   ],
+   "focus": [
+    0.517,
+    0.469
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Strix aluco": {
+   "file": "Syrnium Aluco.jpg",
+   "box": [
+    0.0369,
+    0.0972,
+    0.9693,
+    0.8739
+   ],
+   "focus": [
+    0.503,
+    0.423
+   ],
+   "source": "Gould, The Birds of Europe",
+   "artist": "John Gould",
+   "license": "Public domain"
+  },
+  "Trichoglossus moluccanus": {
+   "file": "Trichoglossus novae hollandiae - 1796-1808 - Print - Iconographia Zoologica - Special Collections University of Amsterdam - UBA01 IZ18500211.tif",
+   "box": [
+    0.0569,
+    0.0903,
+    0.8915,
+    0.8322
+   ],
+   "focus": [
+    0.474,
+    0.402
+   ],
+   "source": "Iconographia Zoologica (Artis Library)",
+   "artist": "Jacques Barraband",
+   "license": "Public domain"
+  },
+  "Troglodytes troglodytes": {
+   "file": "GouldBirdsEuropeIIWren.jpg",
+   "box": [
+    0.3784,
+    0.3167,
+    0.7198,
+    0.7318
+   ],
+   "focus": [
+    0.549,
+    0.491
+   ],
+   "source": "Gould, The Birds of Europe",
+   "artist": "J and E Gould E Lear",
+   "license": "Public domain"
+  },
+  "Turdus merula": {
+   "file": "GouldBirdsEuropeIIBlackbird.jpg",
+   "box": [
+    0.1479,
+    0.1022,
+    0.9417,
+    0.7669
+   ],
+   "focus": [
+    0.545,
+    0.381
+   ],
+   "source": "Gould, The Birds of Europe",
+   "artist": "J and E Gould E Lear",
+   "license": "Public domain"
+  },
+  "Turdus migratorius": {
+   "file": "131 American Robin.jpg",
+   "box": [
+    0.0446,
+    0.0454,
+    0.969,
+    0.9423
+   ],
+   "focus": [
+    0.507,
+    0.422
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  },
+  "Zenaida macroura": {
+   "file": "17 Carolina Turtle Dove.jpg",
+   "box": [
+    0.1466,
+    0.1912,
+    0.8679,
+    0.8324
+   ],
+   "focus": [
+    0.507,
+    0.461
+   ],
+   "source": "Audubon, The Birds of America",
+   "artist": "John James Audubon",
+   "license": "Public domain"
+  }
+ }
+}
