@@ -32,8 +32,11 @@ Every layout adapts to portrait cells. At full bleed, a plate is never cropped: 
 
 | | |
 | --- | --- |
-| ![Field log](screenshots/extra-1.png) | ![Book plate](screenshots/extra-2.png) |
-| ![Gallery](screenshots/extra-3.png) | ![Poster caption](screenshots/extra-4.png) |
+| ![Field log](screenshots/extra-1.png) | ![Latest visitor](screenshots/extra-2.png) |
+| ![Gallery](screenshots/extra-3.png) | ![Day chart](screenshots/extra-4.png) |
+| ![Book plate](screenshots/extra-5.png) | ![Editorial caption](screenshots/extra-6.png) |
+| ![Field notebook caption](screenshots/extra-7.png) | ![Specimen tag caption](screenshots/extra-8.png) |
+| ![Poster caption](screenshots/extra-9.png) | ![Portrait cells](screenshots/extra-10.png) |
 
 ## Pictures
 
