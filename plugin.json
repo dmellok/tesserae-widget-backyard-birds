@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, with classic natural history plates from Audubon, Gould, Lear and others. Six layouts, from a field log to a full-bleed plate. Runs a demo garden until you point it at BirdNET-Go.",
   "icon": "ph-bird",
