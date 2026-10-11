@@ -1,18 +1,19 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, with classic natural history plates from Audubon, Gould, Lear and others. Six layouts, from a field log to a full-bleed plate. Runs a demo garden until you point it at BirdNET-Go.",
   "icon": "ph-bird",
   "supports": {
-    "sizes": ["sm", "md", "lg"]
+    "sizes": [
+      "sm",
+      "md",
+      "lg"
+    ]
   },
   "requires": [
-    "network:commons.wikimedia.org",
-    "network:upload.wikimedia.org",
-    "network:api.inaturalist.org",
-    "network:inaturalist-open-data.s3.amazonaws.com"
+    "network:*"
   ],
   "settings": [
     {
@@ -46,12 +47,30 @@
       "label": "Layout",
       "default": "list",
       "choices": [
-        {"value": "list", "label": "Field log: today's birds as a list"},
-        {"value": "latest", "label": "Latest visitor: the bird just heard, and today's tally"},
-        {"value": "gallery", "label": "Gallery: a card for each bird"},
-        {"value": "chart", "label": "Day chart: who called in which hour"},
-        {"value": "plate", "label": "Book plate: a page from a field guide"},
-        {"value": "bleed", "label": "Full bleed: the latest bird's picture fills the cell"}
+        {
+          "value": "list",
+          "label": "Field log: today's birds as a list"
+        },
+        {
+          "value": "latest",
+          "label": "Latest visitor: the bird just heard, and today's tally"
+        },
+        {
+          "value": "gallery",
+          "label": "Gallery: a card for each bird"
+        },
+        {
+          "value": "chart",
+          "label": "Day chart: who called in which hour"
+        },
+        {
+          "value": "plate",
+          "label": "Book plate: a page from a field guide"
+        },
+        {
+          "value": "bleed",
+          "label": "Full bleed: the latest bird's picture fills the cell"
+        }
       ]
     },
     {
@@ -61,11 +80,26 @@
       "default": "band",
       "help": "Only used by the full bleed layout. The serif and handwritten styles have fine strokes that suit colour and greyscale panels better than black and white ones.",
       "choices": [
-        {"value": "band", "label": "Name band"},
-        {"value": "editorial", "label": "Editorial"},
-        {"value": "notebook", "label": "Field notebook"},
-        {"value": "tag", "label": "Specimen tag"},
-        {"value": "poster", "label": "Poster"}
+        {
+          "value": "band",
+          "label": "Name band"
+        },
+        {
+          "value": "editorial",
+          "label": "Editorial"
+        },
+        {
+          "value": "notebook",
+          "label": "Field notebook"
+        },
+        {
+          "value": "tag",
+          "label": "Specimen tag"
+        },
+        {
+          "value": "poster",
+          "label": "Poster"
+        }
       ]
     },
     {
@@ -75,11 +109,26 @@
       "default": "plate_photo",
       "help": "Classic plates come from a reviewed pack of public-domain illustrations; birds without one get a photo toned to match. The AI options need a fal.ai key in the widget settings.",
       "choices": [
-        {"value": "plate_photo", "label": "Classic plates, photos where there is none"},
-        {"value": "plate_gen", "label": "Classic plates, AI paintings where there is none (experimental)"},
-        {"value": "gen", "label": "AI paintings for every bird (experimental)"},
-        {"value": "photo", "label": "Photos"},
-        {"value": "none", "label": "None"}
+        {
+          "value": "plate_photo",
+          "label": "Classic plates, photos where there is none"
+        },
+        {
+          "value": "plate_gen",
+          "label": "Classic plates, AI paintings where there is none (experimental)"
+        },
+        {
+          "value": "gen",
+          "label": "AI paintings for every bird (experimental)"
+        },
+        {
+          "value": "photo",
+          "label": "Photos"
+        },
+        {
+          "value": "none",
+          "label": "None"
+        }
       ]
     },
     {
@@ -88,8 +137,14 @@
       "label": "Order",
       "default": "recent",
       "choices": [
-        {"value": "recent", "label": "Most recently heard first"},
-        {"value": "count", "label": "Most calls first"}
+        {
+          "value": "recent",
+          "label": "Most recently heard first"
+        },
+        {
+          "value": "count",
+          "label": "Most calls first"
+        }
       ]
     },
     {
@@ -98,11 +153,26 @@
       "label": "How many birds",
       "default": "6",
       "choices": [
-        {"value": "4", "label": "4"},
-        {"value": "6", "label": "6"},
-        {"value": "8", "label": "8"},
-        {"value": "10", "label": "10"},
-        {"value": "12", "label": "12"}
+        {
+          "value": "4",
+          "label": "4"
+        },
+        {
+          "value": "6",
+          "label": "6"
+        },
+        {
+          "value": "8",
+          "label": "8"
+        },
+        {
+          "value": "10",
+          "label": "10"
+        },
+        {
+          "value": "12",
+          "label": "12"
+        }
       ]
     },
     {
@@ -112,11 +182,26 @@
       "default": "70",
       "help": "Detections BirdNET is less sure of than this are left out.",
       "choices": [
-        {"value": "50", "label": "50%"},
-        {"value": "60", "label": "60%"},
-        {"value": "70", "label": "70%"},
-        {"value": "80", "label": "80%"},
-        {"value": "90", "label": "90%"}
+        {
+          "value": "50",
+          "label": "50%"
+        },
+        {
+          "value": "60",
+          "label": "60%"
+        },
+        {
+          "value": "70",
+          "label": "70%"
+        },
+        {
+          "value": "80",
+          "label": "80%"
+        },
+        {
+          "value": "90",
+          "label": "90%"
+        }
       ]
     },
     {
@@ -144,20 +229,52 @@
       "label": "Refresh",
       "default": "5",
       "choices": [
-        {"value": "2", "label": "Every 2 min"},
-        {"value": "5", "label": "Every 5 min"},
-        {"value": "15", "label": "Every 15 min"},
-        {"value": "60", "label": "Hourly"}
+        {
+          "value": "2",
+          "label": "Every 2 min"
+        },
+        {
+          "value": "5",
+          "label": "Every 5 min"
+        },
+        {
+          "value": "15",
+          "label": "Every 15 min"
+        },
+        {
+          "value": "60",
+          "label": "Hourly"
+        }
       ]
     }
   ],
   "data_schema": {
     "fields": [
-      {"name": "label", "type": "str", "label": "Garden"},
-      {"name": "species_today", "type": "num", "label": "Species today"},
-      {"name": "detections_today", "type": "num", "label": "Calls today"},
-      {"name": "new_today", "type": "arr", "label": "New species today"},
-      {"name": "species", "type": "arr", "label": "Birds"}
+      {
+        "name": "label",
+        "type": "str",
+        "label": "Garden"
+      },
+      {
+        "name": "species_today",
+        "type": "num",
+        "label": "Species today"
+      },
+      {
+        "name": "detections_today",
+        "type": "num",
+        "label": "Calls today"
+      },
+      {
+        "name": "new_today",
+        "type": "arr",
+        "label": "New species today"
+      },
+      {
+        "name": "species",
+        "type": "arr",
+        "label": "Birds"
+      }
     ]
   }
 }

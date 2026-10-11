@@ -17,6 +17,8 @@ Both are public unless BirdNET-Go's Private Mode is on. If it is, create an API 
 
 Common names come from BirdNET-Go, so they appear in whatever language BirdNET-Go is set to.
 
+The manifest declares `network:*` rather than a list of hosts, because the BirdNET-Go address is whatever you type in and Tesserae's capability guard matches hosts by name. What the widget actually reaches: your BirdNET-Go address, `commons.wikimedia.org` and `upload.wikimedia.org` for plates, `api.inaturalist.org` and `inaturalist-open-data.s3.amazonaws.com` for photos, and `fal.run` only when the AI picture options are on.
+
 ## Layouts
 
 | Layout | What it shows |
