@@ -295,6 +295,59 @@ def test_fonts_only_for_the_style_on_screen(tmp_path, offline):
     assert lst["font_css"] == ""
 
 
+def test_panel_levels_convert_pictures_and_keep_separate_caches(tmp_path, offline):
+    # A picture asked for by a greyscale or black-and-white panel comes back
+    # converted, from its own cache file, and the colour one is untouched.
+    pics = {}
+    for levels in ("colour", "gray16", "gray4", "mono"):
+        with _at(8):
+            r = server.fetch(
+                {**MELBOURNE, "layout": "list", "pictures": "photo", "panel": levels},
+                {},
+                ctx={"data_dir": str(tmp_path)},
+            )
+        assert r["panel"] == levels
+        raw = base64.b64decode(r["species"][0]["pic"]["src"].split(",", 1)[1])
+        pics[levels] = Image.open(io.BytesIO(raw))
+    assert pics["colour"].mode == "RGB"
+    assert all(pics[k].mode == "L" for k in ("gray16", "gray4", "mono"))
+    cached = sorted(p.name for p in (tmp_path / "img").glob("f_*.jpg"))
+    assert len(cached) == 4 and sum("_mono" in n for n in cached) == 1
+
+
+def test_mono_paper_is_white_and_options_land_in_the_payload(tmp_path, offline):
+    pack = {
+        "Gymnorhina tibicen": {
+            "file": "Magpie.jpg",
+            "box": [0, 0, 1, 1],
+            "focus": [0.5, 0.4],
+            "source": "Gould, The Birds of Australia",
+        }
+    }
+    with _at(8), patch.object(server, "_pack", return_value=pack):
+        r = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "latest",
+                "panel": "mono",
+                "chart_labels": "peak",
+                "count": 12,
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert r["chart_labels"] == "peak"
+    plate = next(s["pic"] for s in [r["latest"]] if s["pic"]["kind"] == "plate")
+    assert plate["paper"] == "#ffffff"
+    with _at(8):
+        bad = server.fetch(
+            {**MELBOURNE, "panel": "sepia", "chart_labels": "all", "pictures": "none"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert (bad["panel"], bad["chart_labels"]) == ("colour", "none")
+
+
 def test_pack_entries_are_well_formed():
     pack = json.loads((ROOT / "plates.json").read_text(encoding="utf-8"))["plates"]
     assert pack
@@ -309,12 +362,23 @@ def test_pack_entries_are_well_formed():
 @pytest.mark.parametrize(
     ("layout", "caption"),
     [(lay, "band") for lay in ("list", "latest", "gallery", "chart", "plate")]
+    + [("chart", "mono-counts"), ("list", "gray4-peak")]
     + [("bleed", cap) for cap in ("band", "editorial", "notebook", "tag", "poster")],
 )
 def test_client_renders_every_layout(tmp_path, layout, caption):
     with _at(8):
+        panel, _, labels = (
+            caption.partition("-") if "-" in caption else ("colour", "", "none")
+        )
         data = server.fetch(
-            {**MELBOURNE, "layout": layout, "caption": caption, "pictures": "none"},
+            {
+                **MELBOURNE,
+                "layout": layout,
+                "caption": caption if "-" not in caption else "band",
+                "pictures": "none",
+                "panel": panel,
+                "chart_labels": labels,
+            },
             {},
             ctx={"data_dir": str(tmp_path)},
         )

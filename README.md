@@ -26,11 +26,19 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 | Field log | Today's birds as a list: picture, name, when last heard, calls today, with a 24-hour activity strip |
 | Latest visitor | The bird just heard, large, beside today's tally |
 | Gallery | A card per bird, with a "new today" flag |
-| Day chart | Who called in which hour. No pictures, so it suits black-and-white panels best |
+| Day chart | Who called in which hour, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
 | Full bleed | The latest bird's picture fills the cell, with one of five caption styles: name band, editorial, field notebook, specimen tag, poster |
 
 Every layout adapts to portrait cells. At full bleed, a plate is never cropped: it is fitted whole into the space the caption leaves, and the rest of the cell is filled with the plate's own paper colour.
+
+**Chart labels** puts numbers on the day chart's cells and the field log's activity strip: a count in every cell, or only in each bird's busiest hour.
+
+## Panels
+
+A Tesserae page is composed once and quantised for each panel afterwards, so the widget cannot tell what the panel can show; the **Panel** option says. **Colour** is the default. **16 greys** converts the pictures to greyscale with a gentle contrast stretch. **4 greys** stretches harder and snaps the day chart's heat scale to the panel's own four steps. **Black and white** lifts the mid-tones so a watercolour plate still reads once the panel dithers it, turns the heat scale into hatch patterns, frames the highlights instead of filling them, and thickens the fine serif and handwritten strokes.
+
+![Day chart in black and white, with counts](screenshots/extra-11.png)
 
 | | |
 | --- | --- |
@@ -64,7 +72,7 @@ It keeps public-domain still images only, prefers known plate series (Audubon, G
 
 ## Fonts
 
-The caption styles bundle Playfair Display, Caveat, IM Fell English, Archivo Black and Archivo Narrow (SIL Open Font License) and Special Elite (Apache 2.0); their licences are in `fonts/`. Only the faces a style needs are sent with a render. The fine strokes of the serif and handwritten styles suit colour and greyscale panels better than black-and-white ones.
+The caption styles bundle Playfair Display, Caveat, IM Fell English, Archivo Black and Archivo Narrow (SIL Open Font License) and Special Elite (Apache 2.0); their licences are in `fonts/`. Only the faces a style needs are sent with a render. On the black-and-white panel setting the fine serif and handwritten strokes are thickened so they survive dithering.
 
 ## Not yet
 

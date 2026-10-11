@@ -91,8 +91,11 @@ function head(d) {
 
 function strip(d) {
   const mx = Math.max(1, ...d.hourly_total);
-  return `<div class="strip">${d.hourly_total.map((v, h) => `
-    <div class="sb"><i style="height:${Math.max(4, (v / mx) * 100)}%" class="${h === d.now_hour ? 'now' : v ? 'on' : ''}"></i>
+  const peak = d.hourly_total.indexOf(mx);
+  const labels = d.chart_labels || 'none';
+  const lab = (v, h) => (v && (labels === 'counts' || (labels === 'peak' && h === peak)) ? `<b>${v}</b>` : '');
+  return `<div class="strip${labels !== 'none' ? ' labelled' : ''}">${d.hourly_total.map((v, h) => `
+    <div class="sb">${lab(v, h)}<i style="height:${Math.max(4, (v / mx) * 100)}%" class="${h === d.now_hour ? 'now' : v ? 'on' : ''}"></i>
     <em>${h % 6 === 0 ? String(h).padStart(2, '0') : ''}</em></div>`).join('')}</div>`;
 }
 
@@ -153,16 +156,19 @@ function chart(d) {
   for (let h = from; h <= to; h++) hours.push(h);
   const rows = [...d.species].sort((a, b) => b.count - a.count);
   const mx = Math.max(1, ...rows.flatMap((s) => hours.map((h) => s.hourly[h] || 0)));
-  const cell = (v, h) => {
+  const labels = d.chart_labels || 'none';
+  /* a label in every cell that has calls, or only in each bird's busiest hour */
+  const cell = (v, h, rowMax) => {
     if (h > d.now_hour) return '<i class="fut"></i>';
     if (!v) return '<i></i>';
     const l = v / mx;
-    return `<i class="${l > 0.55 ? 'l3' : l > 0.25 ? 'l2' : 'l1'}"></i>`;
+    const show = labels === 'counts' || (labels === 'peak' && v === rowMax);
+    return `<i class="${l > 0.55 ? 'l3' : l > 0.25 ? 'l2' : 'l1'}">${show ? `<b>${v}</b>` : ''}</i>`;
   };
   return `${head(d)}
-    <div class="chart">
-      ${rows.map((s) => `<div class="crow"><div class="cn">${esc(s.name)}${tag(s)}</div>
-        <div class="cells">${hours.map((h) => cell(s.hourly[h] || 0, h)).join('')}</div><div class="cc">${s.count}</div></div>`).join('')}
+    <div class="chart${labels !== 'none' ? ' labelled' : ''}">
+      ${rows.map((s) => { const rowMax = Math.max(...hours.map((h) => s.hourly[h] || 0)); return `<div class="crow"><div class="cn">${esc(s.name)}${tag(s)}</div>
+        <div class="cells">${hours.map((h) => cell(s.hourly[h] || 0, h, rowMax)).join('')}</div><div class="cc">${s.count}</div></div>`; }).join('')}
       <div class="crow axis"><div class="cn"></div><div class="cells">${hours.map((h) => `<em>${h % 3 === 0 ? h : ''}</em>`).join('')}</div><div class="cc"></div></div>
     </div>`;
 }
@@ -268,7 +274,7 @@ export default function render(shadow, ctx) {
   installFonts(shadow, d.font_css);
   shadow.innerHTML = `
     <link rel="stylesheet" href="/static/style/spectra-widgets.css">
-    <div class="bb lay-${esc(layout)} size-${esc(size)}">${body}</div>
+    <div class="bb lay-${esc(layout)} size-${esc(size)} lv-${esc(d.panel || 'colour')}">${body}</div>
     <style>
       :host { display: block; height: 100%; }
       .bb {
@@ -470,6 +476,59 @@ export default function render(shadow, ctx) {
         .cap-band .bp { bottom: 26cqmin; }
         .ed-n { font-size: min(17cqmin, 13cqw) !important; }
       }
+
+      /* chart labels */
+      .cells i { position: relative; }
+      .cells i b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2.1cqmin; font-weight: 800; line-height: 1; color: var(--ink); }
+      .cells i.l2 b, .cells i.l3 b { color: var(--paper); }
+      .labelled .crow { max-height: 9cqmin; }
+      .strip.labelled { height: 11cqmin; }
+      .sb b { font-size: 1.8cqmin; font-weight: 800; line-height: 1; text-align: center; margin-bottom: .3cqmin; }
+
+      /* panels with fewer tones. The page is composed once and quantised per
+         device afterwards, so the cell says what the panel can show, and the
+         palette, the heat scale and the picture treatment follow. */
+      .lv-gray16, .lv-gray4, .lv-mono { --alert: var(--ink); --hi: #d4d4d4; }
+      .lv-gray16 .toned img, .lv-gray4 .toned img, .lv-mono .toned img { filter: none; mix-blend-mode: normal; }
+      .lv-gray16 .toned, .lv-gray4 .toned, .lv-mono .toned { background: var(--paper); }
+      .lv-gray16 .lay-plate, .lv-gray16 .page, .lv-gray4 .page, .lv-mono .page, .lv-gray16 .bl, .lv-gray4 .bl, .lv-mono .bl,
+      .lv-gray16 .tile, .lv-gray4 .tile, .lv-mono .tile { background: #fff; color: #000; }
+      .lv-gray16 .pframe, .lv-gray4 .pframe, .lv-mono .pframe { background: #fff; box-shadow: 0 0 0 1px #000; }
+      .lv-gray16 .nb, .lv-gray4 .nb, .lv-mono .nb { color: #000; background-color: #fff; border-right-color: #000; }
+      .lv-gray16 .tg, .lv-gray4 .tg, .lv-mono .tg { background: #fff; color: #000; border-color: #000; }
+      .lv-gray16 .tg::before, .lv-gray4 .tg::before, .lv-mono .tg::before { border-color: #000; background: #fff; }
+      .lv-gray16 .tg-f, .lv-gray4 .tg-f, .lv-mono .tg-f { border-top-color: #000; }
+      .lv-gray16 .po, .lv-gray4 .po, .lv-mono .po { background: #000; color: #fff; }
+      .lv-gray16 .ed-fade, .lv-gray4 .ed-fade, .lv-mono .ed-fade { background: #fff; }
+      .lv-gray16 .ed, .lv-gray4 .ed, .lv-mono .ed { color: #000; }
+      .lv-gray16 .bd-c.a, .lv-gray4 .bd-c.a, .lv-mono .bd-c.a { background: var(--hi); color: #000; }
+      .lv-gray16 .prule, .lv-gray4 .prule, .lv-mono .prule { background: #000; box-shadow: 0 2px 0 #fff, 0 3px 0 #000; }
+      .lv-gray16 .pcols div, .lv-gray4 .pcols div, .lv-mono .pcols div { border-bottom-color: #000; }
+      /* 4 greys: the heat scale snaps to the panel's own steps */
+      .lv-gray4 { --hi: #aaa; --muted: #fff; }
+      .lv-gray4 .cells i, .lv-gray4 .sb i { box-shadow: inset 0 0 0 1px #aaa; }
+      .lv-gray4 .cells i.l1 { background: #aaa; }
+      .lv-gray4 .cells i.l2 { background: #555; }
+      .lv-gray4 .cells i.l3 { background: #000; }
+      .lv-gray4 .cells i.fut { background: repeating-linear-gradient(45deg, #fff 0 3px, #aaa 3px 4px); }
+      .lv-gray4 .nb { background-image: repeating-linear-gradient(#fff 0 6.6cqmin, #aaa 6.6cqmin calc(6.6cqmin + 1px)); }
+      /* black and white: no tones at all, so tones become patterns and
+         highlights become frames; thin serif and script strokes are thickened */
+      .lv-mono { --hi: #fff; --muted: #fff; }
+      .lv-mono .hstat, .lv-mono .lstats > div, .lv-mono .bd-c { box-shadow: inset 0 0 0 1px #000; }
+      .lv-mono .hstat.a, .lv-mono .lstats > .a, .lv-mono .bd-c.a { box-shadow: inset 0 0 0 .7cqmin #000; }
+      .lv-mono .cells i, .lv-mono .sb i { box-shadow: inset 0 0 0 1px #000; }
+      .lv-mono .cells i.l1 { background: repeating-linear-gradient(45deg, #fff 0 2px, #000 2px 3px); }
+      .lv-mono .cells i.l2 { background: repeating-linear-gradient(45deg, #000 0 2px, #fff 2px 3px); }
+      .lv-mono .cells i.l3 { background: #000; }
+      .lv-mono .cells i.fut { background: #fff; box-shadow: inset 0 0 0 1px #000; opacity: .35; }
+      .lv-mono .cells i b { background: #fff; color: #000; inset: 12% 8%; box-shadow: inset 0 0 0 1px #000; }
+      .lv-mono .cells i.l3 b { background: #000; color: #fff; box-shadow: none; inset: 0; }
+      .lv-mono .sb i.now { background: #000; box-shadow: inset 0 0 0 1px #000, inset 0 0 0 .5cqmin #fff; }
+      /* ruled lines dashed: a solid black rule through handwriting reads as a strike-out */
+      .lv-mono .nb { background-image: repeating-linear-gradient(90deg, transparent 0 4px, #fff 4px 7px), repeating-linear-gradient(#fff 0 6.6cqmin, #000 6.6cqmin calc(6.6cqmin + 1px)); }
+      .lv-mono .ptext, .lv-mono .ed, .lv-mono .nb, .lv-mono .tg { -webkit-text-stroke: .35px currentColor; }
+      .lv-mono .row:nth-child(odd), .lv-mono .arow { background: transparent; }
 
       .msg { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 1.4cqmin; padding: 4cqmin; }
       .msg-t { font-weight: 900; font-size: 5cqmin; }

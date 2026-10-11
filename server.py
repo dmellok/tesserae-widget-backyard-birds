@@ -73,6 +73,10 @@ NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
 LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed")
 CAPTIONS = ("band", "editorial", "notebook", "tag", "poster")
 PICTURES = ("plate_photo", "plate_gen", "gen", "photo", "none")
+# What the panel can show. A page is composed once and quantised per device
+# afterwards, so the widget cannot learn this at render time; the cell says.
+LEVELS = ("colour", "gray16", "gray4", "mono")
+CHART_LABELS = ("none", "counts", "peak")
 
 # Longest edge, in pixels, of a picture for each layout. Big enough for a
 # 13.3" panel at full bleed, small enough that a list stays a few hundred KB.
@@ -441,10 +445,19 @@ def _cached_get(data_dir: Path, url: str, token: str = "") -> bytes | None:
 
 
 def _render(
-    raw: bytes, size: int, box: list[float] | None = None, cache: Path | None = None
+    raw: bytes,
+    size: int,
+    box: list[float] | None = None,
+    cache: Path | None = None,
+    levels: str = "colour",
 ) -> str:
     """Crop to ``box`` (fractions), fit the longest edge to ``size`` and return a
-    JPEG data URI. Cached per (source, box, size) when ``cache`` is given."""
+    JPEG data URI. Cached per (source, box, size, levels) when ``cache`` is
+    given. For a greyscale or black-and-white panel the picture is converted
+    here, with the contrast stretched so a watercolour plate still reads once
+    the panel dithers it; the harder the panel, the harder the stretch."""
+    if cache is not None and levels != "colour":
+        cache = cache.with_name(f"{cache.stem}_{levels}{cache.suffix}")
     if cache is not None and cache.exists():
         with contextlib.suppress(OSError):
             return (
@@ -465,6 +478,14 @@ def _render(
         if x1 - x0 > 0.05 and y1 - y0 > 0.05:
             im = im.crop((int(x0 * w), int(y0 * h), int(x1 * w), int(y1 * h)))
     im.thumbnail((size, size), Image.Resampling.LANCZOS)
+    if levels != "colour":
+        cutoff = {"gray16": 0.5, "gray4": 1.0, "mono": 1.0}.get(levels, 1.0)
+        im = ImageOps.autocontrast(im.convert("L"), cutoff=cutoff)
+        if levels == "mono":
+            # The panel dithers every mid-tone to a texture, and a plate's
+            # reds and greens all sit in the mid-tones, so lift them a little
+            # rather than pushing contrast, which turned the bird into a blot.
+            im = im.point([round(255 * (i / 255) ** 0.8) for i in range(256)])
     out = io.BytesIO()
     im.save(out, "JPEG", quality=82, optimize=True, progressive=True)
     data = out.getvalue()
@@ -473,10 +494,14 @@ def _render(
     return "data:image/jpeg;base64," + base64.b64encode(data).decode()
 
 
-def _paper(src: str, cache: Path) -> str:
+def _paper(src: str, cache: Path, levels: str = "colour") -> str:
     """The page colour around a plate (or a painting in the plate style), as
     #rrggbb: the median of a thin band along the picture's edges. Full bleed
     fills the panel with it so the whole plate fits without a visible edge."""
+    if levels == "mono":
+        return "#ffffff"
+    if levels != "colour":
+        cache = cache.with_name(f"{cache.stem}_{levels}{cache.suffix}")
     with contextlib.suppress(OSError):
         hit = cache.read_text(encoding="utf-8").strip()
         if re.fullmatch(r"#[0-9a-f]{6}", hit):
@@ -507,7 +532,7 @@ def _paper(src: str, cache: Path) -> str:
 
 
 def _plate(
-    sci: str, pack: dict[str, Any], size: int, data_dir: Path
+    sci: str, pack: dict[str, Any], size: int, data_dir: Path, levels: str = "colour"
 ) -> dict[str, Any] | None:
     entry = pack.get(sci)
     if not isinstance(entry, dict) or not entry.get("file"):
@@ -519,7 +544,9 @@ def _plate(
     key = hashlib.sha1(
         f"{entry['file']}|{entry.get('box')}|{size}".encode()
     ).hexdigest()[:20]
-    src = _render(raw, size, entry.get("box"), data_dir / "img" / f"p_{key}.jpg")
+    src = _render(
+        raw, size, entry.get("box"), data_dir / "img" / f"p_{key}.jpg", levels
+    )
     if not src:
         return None
     box = entry.get("box") or [0, 0, 1, 1]
@@ -531,7 +558,7 @@ def _plate(
         round(min(1, max(0, (fy - box[1]) / bh)), 3),
     ]
     source = str(entry.get("source") or "Classic plate")
-    paper = _paper(src, data_dir / "img" / f"p_{key}.paper")
+    paper = _paper(src, data_dir / "img" / f"p_{key}.paper", levels)
     return {
         "src": src,
         "kind": "plate",
@@ -585,7 +612,12 @@ def _inat_ref(sci: str, data_dir: Path) -> tuple[str, str]:
 
 
 def _photo(
-    row: dict[str, Any], size: int, base: str, token: str, data_dir: Path
+    row: dict[str, Any],
+    size: int,
+    base: str,
+    token: str,
+    data_dir: Path,
+    levels: str = "colour",
 ) -> dict[str, Any] | None:
     if row.get("thumb") and base:
         thumb = str(row["thumb"])
@@ -599,7 +631,7 @@ def _photo(
     if not raw:
         return None
     key = hashlib.sha1(f"{url}|{size}".encode()).hexdigest()[:20]
-    src = _render(raw, size, None, data_dir / "img" / f"f_{key}.jpg")
+    src = _render(raw, size, None, data_dir / "img" / f"f_{key}.jpg", levels)
     return (
         {"src": src, "kind": "photo", "credit": credit, "focus": [0.5, 0.42]}
         if src
@@ -617,7 +649,12 @@ GEN_PROMPT = (
 
 
 def _generated(
-    row: dict[str, Any], size: int, data_dir: Path, key: str, allow_new: bool
+    row: dict[str, Any],
+    size: int,
+    data_dir: Path,
+    key: str,
+    allow_new: bool,
+    levels: str = "colour",
 ) -> tuple[dict[str, Any] | None, bool]:
     """(picture, made_one). Reads a kept painting, or makes one when allowed.
 
@@ -634,10 +671,12 @@ def _generated(
             credit = str(
                 json.loads(meta.read_text(encoding="utf-8")).get("credit") or credit
             )
-        src = _render(img.read_bytes(), size, None, folder / f"{slug}_{size}.jpg")
+        src = _render(
+            img.read_bytes(), size, None, folder / f"{slug}_{size}.jpg", levels
+        )
         if not src:
             return None, False
-        paper = _paper(src, folder / f"{slug}.paper")
+        paper = _paper(src, folder / f"{slug}.paper", levels)
         return {
             "src": src,
             "kind": "generated",
@@ -694,10 +733,10 @@ def _generated(
         )
         _write(meta, json.dumps({"credit": credit, "made": int(time.time())}).encode())
         _write(img, raw)
-        src = _render(raw, size, None, folder / f"{slug}_{size}.jpg")
+        src = _render(raw, size, None, folder / f"{slug}_{size}.jpg", levels)
         if not src:
             return None, True
-        paper = _paper(src, folder / f"{slug}.paper")
+        paper = _paper(src, folder / f"{slug}.paper", levels)
         return {
             "src": src,
             "kind": "generated",
@@ -718,6 +757,7 @@ def _attach_pictures(
     token: str,
     fal_key: str,
     data_dir: Path,
+    levels: str = "colour",
 ) -> list[str]:
     """Give each row a ``pic`` per the pictures option. Returns notices."""
     notices: list[str] = []
@@ -729,7 +769,7 @@ def _attach_pictures(
         notices.append(NOTE_NO_KEY)
 
     def plate_or_photo(row: dict[str, Any]) -> dict[str, Any] | None:
-        pic = _plate(row["sci"], pack, size, data_dir) if pack else None
+        pic = _plate(row["sci"], pack, size, data_dir, levels) if pack else None
         return pic
 
     # Plates and photos are independent fetches, so they run side by side; a
@@ -740,13 +780,15 @@ def _attach_pictures(
     for row, plate in zip(rows, plates, strict=True):
         pic = plate
         if pic is None and wants_gen:
-            pic, did = _generated(row, size, data_dir, fal_key, allow_new=not made)
+            pic, did = _generated(
+                row, size, data_dir, fal_key, allow_new=not made, levels=levels
+            )
             made = made or did
         row["pic"] = pic
     missing = [r for r in rows if not r.get("pic")]
     with ThreadPoolExecutor(max_workers=6) as pool:
         photos = list(
-            pool.map(lambda r: _photo(r, size, base, token, data_dir), missing)
+            pool.map(lambda r: _photo(r, size, base, token, data_dir, levels), missing)
         )
     for row, pic in zip(missing, photos, strict=True):
         row["pic"] = pic
@@ -797,6 +839,8 @@ def fetch(
     layout = _choice(options.get("layout"), LAYOUTS)
     caption = _choice(options.get("caption"), CAPTIONS)
     pictures = _choice(options.get("pictures"), PICTURES)
+    levels = _choice(options.get("panel"), LEVELS)
+    chart_labels = _choice(options.get("chart_labels"), CHART_LABELS)
     sort = "count" if options.get("sort") == "count" else "recent"
     want = _int(options.get("count"), 6, 1, 20)
     min_conf = _int(options.get("min_confidence"), 70, 10, 99)
@@ -843,11 +887,11 @@ def fetch(
     notices: list[str] = []
     if layout in ("latest", "plate", "bleed") and latest:
         notices = _attach_pictures(
-            [latest], pictures, SIZE[layout], base, token, fal_key, data_dir
+            [latest], pictures, SIZE[layout], base, token, fal_key, data_dir, levels
         )
     elif layout in ("list", "gallery"):
         notices = _attach_pictures(
-            shown, pictures, SIZE[layout], base, token, fal_key, data_dir
+            shown, pictures, SIZE[layout], base, token, fal_key, data_dir, levels
         )
 
     hourly_total = [0] * 24
@@ -876,6 +920,8 @@ def fetch(
         "layout": layout,
         "caption": caption,
         "pictures": pictures,
+        "panel": levels,
+        "chart_labels": chart_labels,
         "sort": sort,
         "show_sci": options.get("show_sci", True) is not False,
         "species": shown,

@@ -1,9 +1,9 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "kind": "widget",
-  "description": "The birds BirdNET-Go has heard today, with classic natural history plates from Audubon, Gould, Lear and others. Six layouts, from a field log to a full-bleed plate. Runs a demo garden until you point it at BirdNET-Go.",
+  "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others. Six layouts, from a field log to a full-bleed plate. Colour, greyscale and black-and-white panels. Runs a demo garden until you point it at BirdNET-Go.",
   "icon": "ph-bird",
   "supports": {
     "sizes": [
@@ -132,6 +132,31 @@
       ]
     },
     {
+      "name": "panel",
+      "type": "select",
+      "label": "Panel",
+      "default": "colour",
+      "help": "What the panel can show. Pictures are converted and contrast-stretched to match, the chart's heat scale snaps to the panel's steps, and on black and white the tones become patterns and the highlights become frames.",
+      "choices": [
+        {
+          "value": "colour",
+          "label": "Colour"
+        },
+        {
+          "value": "gray16",
+          "label": "16 greys"
+        },
+        {
+          "value": "gray4",
+          "label": "4 greys"
+        },
+        {
+          "value": "mono",
+          "label": "Black and white"
+        }
+      ]
+    },
+    {
       "name": "sort",
       "type": "select",
       "label": "Order",
@@ -144,6 +169,27 @@
         {
           "value": "count",
           "label": "Most calls first"
+        }
+      ]
+    },
+    {
+      "name": "chart_labels",
+      "type": "select",
+      "label": "Chart labels",
+      "default": "none",
+      "help": "Numbers on the day chart's cells and the field log's activity strip.",
+      "choices": [
+        {
+          "value": "none",
+          "label": "None"
+        },
+        {
+          "value": "counts",
+          "label": "Count in every cell"
+        },
+        {
+          "value": "peak",
+          "label": "Busiest hour only"
         }
       ]
     },
