@@ -28,7 +28,9 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 | Gallery | A card per bird, with a "new today" flag |
 | Day chart | Who called in which hour, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
-| Full bleed | The latest bird's picture fills the cell, with one of five caption styles: name band, editorial, field notebook, specimen tag, poster |
+| Full bleed | The latest bird's picture fills the cell, with one of nine caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype |
+
+The last four full-bleed styles are natural-history pieces. **Folio plate** is a double-ruled page from a Victorian folio, numbered by which bird of the day this was, with an engraved caption. **Museum label** sets the plate beside a collection card in printed field names and handwritten entries. **Scientific figure** draws the bird's calls per hour round a 24-hour dial with a figure caption. **Cyanotype** prints the picture as its own negative, white on Prussian blue, under the Latin name.
 
 Every layout adapts to portrait cells. At full bleed, a plate is never cropped: it is fitted whole into the space the caption leaves, and the rest of the cell is filled with the plate's own paper colour.
 
@@ -51,8 +53,20 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 ## Pictures
 
 - **Classic plates** come from `plates.json`, a reviewed pack of public-domain illustrations on Wikimedia Commons. Each entry records the file, a crop box around the bird and the source book. The widget fetches a plate once, crops and resizes it, and keeps it.
-- **Photos** fill the gaps: BirdNET-Go's own species thumbnail, or in demo mode an openly licensed iNaturalist photo. Shown among plates, a photo is toned to a warm monotone so the set still matches.
-- **AI paintings (experimental)** repaint an openly licensed reference photo in the plate style through [fal.ai](https://fal.ai). Each bird is painted once and kept, at most one new painting per refresh and twelve a day, at about US$0.04 a bird. They are credited as AI paintings on the panel. Add a fal.ai key in the widget's settings to use them.
+- **Photos** fill the gaps: BirdNET-Go's own species thumbnail, or in demo mode an openly licensed iNaturalist photo. Shown among plates, a photo is toned to a warm monotone so the set still matches; set **Photo colour** to natural colour to leave photos as they are.
+- **AI paintings (experimental)** repaint an openly licensed reference photo in the plate style through [fal.ai](https://fal.ai). Each bird is painted once and kept, at most one new painting per refresh and twelve a day, at about US$0.04 a bird. A painting takes longer than Tesserae gives a widget to fetch its data, so it is made in the background: the bird shows a photo with a "Painting the …" note, and the painting appears on a later refresh. If fal.ai refuses (a wrong key, an empty balance), the reason is printed on the panel and that bird is not tried again for six hours. Paintings are credited as AI paintings on the panel. Add a fal.ai key in the widget's settings to use them.
+
+### Managing the paintings
+
+The widget has its own page under **Widgets → Backyard Birds** (`/plugins/backyard_birds/`) listing every painting it has made. From there you can:
+
+- **Repaint** a bird. The current painting is kept as an earlier version, and any earlier version can be brought back or deleted.
+- **Delete** a painting. With an AI picture option on, the bird is painted again the next time it is shown.
+- **Use instead of the classic plate**, so a painting you like wins over the bird's plate, even with the plain "Classic plates, photos" option.
+- **Paint a bird** now, by scientific name, to compare a painting with its plate before choosing.
+- See today's count against the daily limit, and why a painting failed, with a button to let the widget try again.
+
+A kept painting is also used for a bird without a plate whenever classic plates are on, so turning the AI option off does not throw the paintings away.
 
 Credits for whatever is on screen are printed in the corner or footer.
 

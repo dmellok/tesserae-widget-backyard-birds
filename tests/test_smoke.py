@@ -10,6 +10,7 @@ import io
 import json
 import shutil
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -41,6 +42,14 @@ def _at(hour: int, minute: int = 14, tz: str = "Australia/Melbourne"):
             return datetime(2026, 10, 11, hour, minute, tzinfo=ZoneInfo(tz))
 
     return patch.object(server, "datetime", Frozen)
+
+
+def _settle(timeout: float = 10.0) -> None:
+    """Wait for background paintings to finish."""
+    end = time.time() + timeout
+    while server._PAINTING and time.time() < end:
+        time.sleep(0.02)
+    assert not server._PAINTING, "a painting never finished"
 
 
 def _jpeg(w: int = 300, h: int = 400) -> bytes:
@@ -256,16 +265,90 @@ def test_generated_needs_a_key(tmp_path, offline):
 
 
 def test_generated_once_per_species(tmp_path, offline):
+    opts = {**MELBOURNE, "layout": "bleed", "pictures": "gen"}
     with _at(8):
-        for _ in range(3):
+        first = server.fetch(
+            opts, {"fal_api_key": "k"}, ctx={"data_dir": str(tmp_path)}
+        )
+        _settle()
+        for _ in range(2):
             r = server.fetch(
-                {**MELBOURNE, "layout": "bleed", "pictures": "gen"},
-                {"fal_api_key": "k"},
-                ctx={"data_dir": str(tmp_path)},
+                opts, {"fal_api_key": "k"}, ctx={"data_dir": str(tmp_path)}
             )
+    # the first render does not wait for fal: it shows a photo and says so
+    assert first["latest"]["pic"]["kind"] == "photo"
+    assert any(n.startswith("Painting the ") for n in first["notices"])
     assert r["latest"]["pic"]["kind"] == "generated"
     assert "AI painting" in r["latest"]["pic"]["credit"]
+    assert not r["notices"]
     assert sum("fal.run" in u for u in offline) == 1, "painted once, then kept"
+
+
+def test_generated_failure_is_shown_and_not_retried(tmp_path, offline):
+    calls: list[str] = []
+    real = server._http.side_effect
+
+    def refusing(url, token="", accept="application/json", **kw):
+        calls.append(url)
+        if "fal.run" in url:
+            return None, "HTTP 403: Exhausted balance"
+        return real(url, token, accept, **kw)
+
+    opts = {**MELBOURNE, "layout": "bleed", "pictures": "gen"}
+    with _at(8), patch.object(server, "_http", side_effect=refusing):
+        server.fetch(opts, {"fal_api_key": "k"}, ctx={"data_dir": str(tmp_path)})
+        _settle()
+        r = server.fetch(opts, {"fal_api_key": "k"}, ctx={"data_dir": str(tmp_path)})
+        _settle()
+    assert r["latest"]["pic"]["kind"] == "photo"
+    assert any("Exhausted balance" in n for n in r["notices"]), r["notices"]
+    assert sum("fal.run" in u for u in calls) == 1
+
+
+def test_repaint_keeps_the_old_painting(tmp_path, offline):
+    with _at(8):
+        server._start_painting("Noisy Miner", "Manorina melanocephala", tmp_path, "k")
+        _settle()
+        server._start_painting("Noisy Miner", "Manorina melanocephala", tmp_path, "k")
+        _settle()
+    g = server._gallery(tmp_path)
+    (bird,) = g["birds"]
+    assert bird["name"] == "Noisy Miner" and bird["active"]
+    assert len(bird["archive"]) == 1
+    assert g["used"] == 2
+
+
+def test_painting_marked_on_admin_page_replaces_the_plate(tmp_path, offline):
+    opts = {**MELBOURNE, "layout": "bleed", "pictures": "plate_photo"}
+    with _at(8):
+        before = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
+        L = before["latest"]
+        assert L["pic"]["kind"] == "plate"
+        server._start_painting(L["name"], L["sci"], tmp_path, "k")
+        _settle()
+        slug = server._slug(L["sci"])
+        server._write(
+            tmp_path / "gen" / "prefs.json",
+            json.dumps({slug: {"prefer": True}}).encode(),
+        )
+        after = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
+    assert after["latest"]["pic"]["kind"] == "generated"
+
+
+def test_photo_tone_option(tmp_path, offline):
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "photo_tone": "natural", "pictures": "none"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        bad = server.fetch(
+            {**MELBOURNE, "photo_tone": "sepia", "pictures": "none"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert r["photo_tone"] == "natural"
+    assert bad["photo_tone"] == "toned"
 
 
 def test_generated_one_new_painting_per_fetch(tmp_path, offline):
@@ -275,6 +358,7 @@ def test_generated_one_new_painting_per_fetch(tmp_path, offline):
             {"fal_api_key": "k"},
             ctx={"data_dir": str(tmp_path)},
         )
+        _settle()
     assert sum("fal.run" in u for u in offline) == 1
 
 
@@ -363,7 +447,7 @@ def test_pack_entries_are_well_formed():
     ("layout", "caption"),
     [(lay, "band") for lay in ("list", "latest", "gallery", "chart", "plate")]
     + [("chart", "mono-counts"), ("list", "gray4-peak")]
-    + [("bleed", cap) for cap in ("band", "editorial", "notebook", "tag", "poster")],
+    + [("bleed", cap) for cap in server.CAPTIONS],
 )
 def test_client_renders_every_layout(tmp_path, layout, caption):
     with _at(8):

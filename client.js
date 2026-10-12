@@ -6,7 +6,8 @@
    the server: the render sandbox has no network.
 
    A photo shown among classic plates is toned to a warm monotone so a garden
-   where only some birds have a plate still reads as one set. */
+   where only some birds have a plate still reads as one set, unless the cell
+   asks for natural colour. */
 
 const esc = (s) =>
   String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -75,6 +76,44 @@ function twoLines(name, maxCqmin, widthCqw, em) {
 }
 
 const tag = (s) => (s.new ? '<span class="new">new</span>' : '');
+
+const ROMAN = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+function roman(n) {
+  let out = '';
+  for (const [v, r] of ROMAN) while (n >= v) { out += r; n -= v; }
+  return out || 'I';
+}
+
+/* The figure caption's dial: calls per hour round a 24-hour clock, midnight
+   at the top, the current hour marked on the rim. */
+function dial(hourly, nowHour) {
+  const h = (hourly || []).slice(0, 24);
+  const mx = Math.max(1, ...h);
+  const r0 = 30, span = 58;
+  const at = (i, r) => {
+    const a = ((i + 0.5) / 24) * 2 * Math.PI - Math.PI / 2;
+    return [(Math.cos(a) * r).toFixed(1), (Math.sin(a) * r).toFixed(1)];
+  };
+  const bars = h.map((v, i) => {
+    if (!v) return '';
+    const [x1, y1] = at(i, r0 + 1.5), [x2, y2] = at(i, r0 + 1.5 + (v / mx) * span);
+    return `<line class="${v === mx ? 'pk' : ''}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }).join('');
+  const ticks = Array.from({ length: 24 }, (_, i) => {
+    const a = (i / 24) * 2 * Math.PI - Math.PI / 2, c = Math.cos(a), sn = Math.sin(a);
+    const r1 = i % 6 ? 93 : 90;
+    return `<line x1="${(c * r1).toFixed(1)}" y1="${(sn * r1).toFixed(1)}" x2="${(c * 96).toFixed(1)}" y2="${(sn * 96).toFixed(1)}"/>`;
+  }).join('');
+  const labels = [[0, '0', 0, -101], [6, '6', 103, 0], [12, '12', 0, 104], [18, '18', -103, 0]]
+    .map(([, t, x, y]) => `<text x="${x}" y="${y}">${t}</text>`).join('');
+  const [nx1, ny1] = at(nowHour, 97), [nx2, ny2] = at(nowHour, 108);
+  return `<svg class="fg-dial" viewBox="-116 -116 232 232" aria-hidden="true">
+    <circle class="g" r="${r0 + span / 2}"/><circle class="g" r="${r0 + span}"/>
+    <circle class="ax" r="${r0}"/><circle class="ax" r="96"/>
+    <g class="tk">${ticks}</g><g class="br">${bars}</g>
+    <line class="now" x1="${nx1}" y1="${ny1}" x2="${nx2}" y2="${ny2}"/>
+    <g class="lb">${labels}</g></svg>`;
+}
 
 function head(d) {
   return `
@@ -212,8 +251,43 @@ function bleed(d, showSci, tone, caption) {
       <div class="nb-t">heard ${esc(when)} &mdash; <u>${L.count}</u> times today</div>
       <div class="nb-t">${d.species_today} species so far &#10003;</div>
       <div class="nb-c">BirdNET ${Math.round(L.conf * 100)}% sure</div></div>`;
+  } else if (caption === 'folio') {
+    const nth = ordinalWords(L.count);
+    cap = `<div class="fo-frame"></div>
+      <div class="fo-head"><span>${esc(d.label)}</span><span>Pl. ${roman(L.order || 1)}.</span></div>
+      <div class="fo-cap">
+        <div class="fo-n" style="${fit(`${L.name}.`, 7.4, 84, 0.68, true)}">${esc(L.name)}.</div>
+        ${sci ? `<div class="fo-s">${sci}.</div>` : ''}
+        <div class="fo-l">${nth ? `Heard the ${esc(nth)} time to-day` : 'Heard to-day'}, last at ${esc(L.last)}.</div></div>`;
+  } else if (caption === 'museum') {
+    cap = `<div class="mu">
+        <div class="mu-h">${esc(d.label)}</div>
+        <div class="mu-h2">Collection of Birds · Reg. No. ${esc(d.date_iso.slice(0, 4))}.${String(d.detections_today).padStart(4, '0')}</div>
+        <dl class="mu-f">
+          <dt>Name</dt><dd>${esc(L.name)}</dd>
+          ${sci ? `<dt>Species</dt><dd class="it">${sci}</dd>` : ''}
+          <dt>Date</dt><dd>${esc(d.date)}, ${esc(L.last)}</dd>
+          <dt>Calls</dt><dd>${L.count} to-day</dd>
+          <dt>Det.</dt><dd>BirdNET, ${Math.round(L.conf * 100)}%</dd>
+        </dl></div>`;
+  } else if (caption === 'figure') {
+    const hourly = L.hourly || [];
+    const peak = hourly.length ? hourly.indexOf(Math.max(...hourly)) : -1;
+    cap = `<div class="fg">
+      <div class="fg-t">
+        <div class="fg-k">Fig. ${L.order || 1}.</div>
+        <div class="fg-n" style="font-size:${twoLines(L.name, 7.6, 40, 0.5)}">${esc(L.name)}</div>
+        ${sci ? `<div class="fg-s">${sci}</div>` : ''}
+      </div>
+      ${dial(hourly, d.now_hour)}
+      <div class="fg-c"><b>Diurnal calling</b>, ${esc(d.date)}. Calls per hour round the clock, n&nbsp;=&nbsp;${L.count}${peak >= 0 ? `; most at ${String(peak).padStart(2, '0')}:00` : ''}. The mark on the rim is now.</div></div>`;
+  } else if (caption === 'cyanotype') {
+    const main = sci || esc(L.name);
+    cap = `<div class="cy-edge"></div><div class="cy">
+      <div class="cy-n" style="${fit(`${main}.`, 6.4, 80, 0.46, true)}">${main}.</div>
+      <div class="cy-s">${sci ? `${esc(L.name)} · ` : ''}heard ${L.count} times · ${esc(d.date)}</div></div>`;
   } else if (caption === 'tag') {
-    cap = `<div class="tg">
+    cap = `<div class="tg"><svg class="tg-bg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,12 8,0 100,0 100,100 8,100 0,88"/></svg>
       <div class="tg-k">${esc(d.label).toUpperCase()} · NO. ${String(d.detections_today).padStart(4, '0')}</div>
       <div class="tg-n">${esc(L.name)}</div>
       ${sci ? `<div class="tg-s">${sci}</div>` : ''}
@@ -256,7 +330,7 @@ export default function render(shadow, ctx) {
   const size = (ctx && ctx.cell && ctx.cell.size) || 'md';
   const layout = d.layout || 'list';
   const showSci = d.show_sci !== false;
-  const tone = String(d.pictures || '').startsWith('plate');
+  const tone = String(d.pictures || '').startsWith('plate') && d.photo_tone !== 'natural';
 
   let body;
   if (d.error) {
@@ -355,8 +429,8 @@ export default function render(shadow, ctx) {
       .lfoot2 { border-top: var(--rule) solid var(--ink); padding: 1.4cqmin 2.4cqmin; font-size: 2.1cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       @container (max-aspect-ratio: 1) {
         .lat { flex-direction: column; }
-        .lpic { flex: 0 0 64%; }
-        .lside { border-left: 0; border-top: var(--rule) solid var(--ink); }
+        .lpic { flex: 1 1 0; min-height: 0; }
+        .lside { flex: 0 1 auto; max-height: 44%; min-height: 0; border-left: 0; border-top: var(--rule) solid var(--ink); }
       }
 
       /* gallery */
@@ -406,10 +480,16 @@ export default function render(shadow, ctx) {
       .pcols div { display: flex; justify-content: space-between; border-bottom: 1px solid #b7a67c; padding: .5cqmin 0; break-inside: avoid; }
       .pcols span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1cqmin; }
       .pcredit { margin-top: auto; font-style: italic; font-size: 2.2cqmin; opacity: .75; }
+      .pcols { overflow: hidden; }
       @container (max-aspect-ratio: 1) {
-        .page { flex-direction: column; }
-        .pframe { flex: 0 0 52%; }
+        .page { flex-direction: column; gap: 3cqmin; }
+        .pframe { flex: 1 1 0; min-height: 0; }
+        .ptext { flex: 0 0 auto; }
+        .pkick.sp { margin-top: 2.4cqmin; }
+        .pcols div:nth-child(n+7) { display: none; }
+        .pcredit { margin-top: 1.6cqmin; }
       }
+      @container (max-aspect-ratio: 0.62) { .pcols { columns: 1; } .pcols div:nth-child(n+5) { display: none; } }
 
       /* bleed: the picture is the page. Each caption owns part of the cell and
          the picture gets the rest, so a caption never sits on the bird. */
@@ -446,9 +526,12 @@ export default function render(shadow, ctx) {
       .nb-s { font-size: 5cqmin; font-style: italic; margin-top: .8cqmin; }
       .nb-t { font-size: 5.6cqmin; line-height: 1.25; margin-top: 2.6cqmin; }
       .nb-c { font-size: 4cqmin; margin-top: 4cqmin; opacity: .75; }
-      .tg { position: absolute; right: 3cqmin; top: 50%; width: 38%; transform: translateY(-50%) rotate(-4deg); background: #efe4c6; border: 1px solid #8f7c58;
-            padding: 3cqmin 3.4cqmin 2.6cqmin 5.4cqmin; font-family: 'Special Elite', 'Courier New', monospace; color: #262018;
-            clip-path: polygon(0 12%, 8% 0, 100% 0, 100% 100%, 8% 100%, 0 88%); }
+      /* the tag's outline is an SVG polygon: a clip-path would cut the border
+         off the clipped corners */
+      .tg { position: absolute; right: 3cqmin; top: 50%; width: 38%; transform: translateY(-50%) rotate(-4deg); isolation: isolate;
+            padding: 3cqmin 3.4cqmin 2.6cqmin 5.4cqmin; font-family: 'Special Elite', 'Courier New', monospace; color: #262018; }
+      .tg-bg { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; overflow: visible; }
+      .tg-bg polygon { fill: #efe4c6; stroke: #8f7c58; stroke-width: 1.6px; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
       .tg::before { content: ''; position: absolute; left: 2.2cqmin; top: 50%; width: 2.4cqmin; height: 2.4cqmin; border-radius: 50%; border: 2px solid #8f7c58; transform: translateY(-50%); background: #f4ecd8; }
       .tg-k { font-size: 2.2cqmin; letter-spacing: .12em; }
       .tg-n { font-size: 5.6cqmin; margin-top: 1.6cqmin; line-height: 1.05; }
@@ -477,6 +560,102 @@ export default function render(shadow, ctx) {
         .ed-n { font-size: min(17cqmin, 13cqw) !important; }
       }
 
+      /* folio: a page from a Victorian folio, double-ruled, the plate number
+         being which bird of the day this was */
+      .cap-folio { color: #2a2116; }
+      .cap-folio .bp { top: 10cqmin; left: 7cqmin; right: 7cqmin; bottom: 25cqmin; }
+      .cap-folio .bp.fit { padding: 0; }
+      .fo-frame { position: absolute; inset: 2.6cqmin; border: max(2px, .55cqmin) solid currentColor; }
+      .fo-frame::after { content: ''; position: absolute; inset: .9cqmin; border: 1px solid currentColor; }
+      .cap-folio .bcredit { top: 0; left: 0; right: 0; max-width: none; text-align: center; background: transparent; color: inherit; padding: .45cqmin 3cqmin 0; font-size: 1.5cqmin; }
+      .fo-head { position: absolute; top: 5.2cqmin; left: 6.4cqmin; right: 6.4cqmin; display: flex; justify-content: space-between; font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.8cqmin; letter-spacing: .16em; }
+      .fo-head span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-right: 3cqmin; }
+      .fo-cap { position: absolute; left: 6.4cqmin; right: 6.4cqmin; bottom: 5.4cqmin; height: 18cqmin; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
+      .fo-n { font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .08em; line-height: 1.05; white-space: nowrap; }
+      .fo-s { font-style: italic; font-size: 3.6cqmin; margin-top: .4cqmin; }
+      .fo-l { font-style: italic; font-size: 2.6cqmin; margin-top: 1.2cqmin; padding-top: 1.1cqmin; border-top: 1px solid currentColor; opacity: .85; }
+
+      /* museum: the plate as a specimen, with a collection label beside it */
+      .cap-museum { color: #1d1a16; --mz: 1; }
+      .cap-museum .bp { right: 38%; }
+      .mu { position: absolute; right: 4cqmin; top: 50%; width: calc(38% - 7cqmin); transform: translateY(-50%); box-sizing: border-box; background: #fbf8ef; color: #1d1a16;
+            border: max(2px, .45cqmin) solid #1d1a16; box-shadow: inset 0 0 0 .7cqmin #fbf8ef, inset 0 0 0 calc(.7cqmin + 1px) #1d1a16; padding: calc(3cqmin * var(--mz)) calc(3.2cqmin * var(--mz)) calc(2.6cqmin * var(--mz)); font-family: 'IM Fell English', Georgia, serif; }
+      .mu-h { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(3.6cqmin * var(--mz)); letter-spacing: .1em; text-align: center; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mu-h2 { font-size: calc(2.2cqmin * var(--mz)); font-style: italic; text-align: center; margin-top: .6cqmin; padding-bottom: 1.4cqmin; border-bottom: 1px solid #1d1a16; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mu-f { display: grid; grid-template-columns: auto 1fr; column-gap: 2cqmin; margin: 1.2cqmin 0 0; align-items: baseline; }
+      .mu-f dt { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(2.5cqmin * var(--mz)); letter-spacing: .06em; }
+      .mu-f dd { margin: 0; font-family: Caveat, cursive; font-size: calc(4.3cqmin * var(--mz)); line-height: 1.25; color: #23324a; border-bottom: 1px dotted #6d6457; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mu-f dd.it { font-style: italic; white-space: normal; line-height: 1.05; padding: .5cqmin 0 .4cqmin; }
+
+      /* figure: a plate with a figure from a paper, the bird's calls per hour
+         round a 24-hour dial */
+      .cap-figure { color: #1f1a14; }
+      .cap-figure .bp { right: 47%; }
+      .fg { position: absolute; left: 55%; right: 4cqmin; top: 4cqmin; bottom: 4cqmin; display: flex; flex-direction: column; justify-content: center; gap: 2cqmin; font-family: 'IM Fell English', Georgia, serif; }
+      .fg-k { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.8cqmin; letter-spacing: .16em; }
+      .fg-n { font-family: 'IM Fell English SC', Georgia, serif; line-height: 1; letter-spacing: .03em; margin-top: .6cqmin; }
+      .fg-s { font-style: italic; font-size: 3.4cqmin; margin-top: .6cqmin; }
+      .fg-dial { width: 100%; flex: 1 1 0; min-height: 0; max-height: 52cqh; overflow: visible; }
+      .fg-dial .g { fill: none; stroke: currentColor; stroke-width: .5; stroke-dasharray: 1.5 2.5; opacity: .55; }
+      .fg-dial .ax { fill: none; stroke: currentColor; stroke-width: .9; }
+      .fg-dial .tk line { stroke: currentColor; stroke-width: .9; }
+      .fg-dial .br line { stroke: currentColor; stroke-width: 6.4; }
+      .fg-dial .br line.pk { stroke: #9b2c1c; }
+      .fg-dial .now { stroke: #9b2c1c; stroke-width: 2.6; }
+      .fg-dial .lb text { font-family: 'IM Fell English', Georgia, serif; font-size: 11px; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+      .fg-c { font-size: 2.6cqmin; line-height: 1.35; border-top: 1px solid currentColor; padding-top: 1.4cqmin; }
+      .fg-c b { font-weight: 400; font-style: italic; }
+
+      /* cyanotype: a photogram in Prussian blue after Anna Atkins, the picture
+         printed as its own negative, white on blue */
+      .bl.cap-cyanotype { background: #1d4a7c !important; color: #f3f6f9; }
+      .cap-cyanotype .bp { top: 4cqmin; left: 6cqmin; right: 6cqmin; bottom: 17cqmin; background: transparent !important; }
+      .cap-cyanotype .bp.fit { padding: 0; }
+      .cap-cyanotype .bp img { filter: grayscale(1) invert(1) contrast(1.55) brightness(1.08); mix-blend-mode: screen; }
+      .cap-cyanotype .bp.nopic { color: #f3f6f9; }
+      .cy-edge { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 7cqmin 1.5cqmin rgba(9, 28, 54, .7); }
+      .cy { position: absolute; left: 5cqmin; right: 5cqmin; bottom: 3.6cqmin; height: 12cqmin; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cy-n { font-style: italic; line-height: 1.1; white-space: nowrap; }
+      .cy-s { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.6cqmin; letter-spacing: .14em; margin-top: 1cqmin; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .cap-cyanotype .bcredit { background: rgba(9, 28, 54, .6); color: #f3f6f9; }
+
+      @container (max-aspect-ratio: 1) {
+        .cap-folio .bp { top: 9cqmin; bottom: 27cqmin; left: 6cqmin; right: 6cqmin; }
+        .fo-cap { height: 20cqmin; }
+        .cap-museum .bp { right: 0; bottom: 38%; }
+        .mu { top: 81%; transform: translateY(-50%); left: 5cqmin; right: 5cqmin; width: auto; }
+        .cap-figure .bp { right: 0; bottom: 46%; }
+        .fg { left: 5cqmin; right: 5cqmin; top: 55%; bottom: 3.4cqmin; display: grid; grid-template-columns: 46% 1fr; grid-template-rows: auto 1fr; column-gap: 4cqmin; row-gap: 1.6cqmin; align-content: stretch; }
+        .fg-t { grid-column: 1 / -1; }
+        .fg-dial { max-height: none; height: 100%; flex: none; }
+        .fg-c { align-self: center; border-top: 0; border-left: 1px solid currentColor; padding: 0 0 0 2.6cqmin; font-size: 3.2cqmin; }
+        .cap-cyanotype .bp { bottom: 21cqmin; top: 5cqmin; }
+        .cy { height: 15cqmin; bottom: 5cqmin; }
+      }
+
+      /* near-square cells keep the museum label beside the picture: below it
+         there is not room for a label sized to the cell's width */
+      @container (min-aspect-ratio: 0.8) and (max-aspect-ratio: 1) {
+        .cap-museum { --mz: .72; }
+        .cap-museum .bp { right: 42%; bottom: 0; }
+        .mu { top: 50%; transform: translateY(-50%); left: auto; right: 3cqmin; width: calc(42% - 5cqmin); }
+      }
+
+      /* panels with fewer tones: the new looks drop their paper tints */
+      .lv-gray16 .cap-folio, .lv-gray4 .cap-folio, .lv-mono .cap-folio,
+      .lv-gray16 .cap-museum, .lv-gray4 .cap-museum, .lv-mono .cap-museum,
+      .lv-gray16 .cap-figure, .lv-gray4 .cap-figure, .lv-mono .cap-figure { color: #000; }
+      .lv-gray16 .mu, .lv-gray4 .mu, .lv-mono .mu { background: #fff; box-shadow: inset 0 0 0 .7cqmin #fff, inset 0 0 0 calc(.7cqmin + 1px) #000; border-color: #000; }
+      .lv-gray16 .mu-f dd, .lv-gray4 .mu-f dd, .lv-mono .mu-f dd { color: #000; border-bottom-color: #000; }
+      .lv-gray16 .fg-dial .br line.pk, .lv-gray4 .fg-dial .br line.pk, .lv-mono .fg-dial .br line.pk { stroke: currentColor; }
+      .lv-gray16 .fg-dial .now, .lv-gray4 .fg-dial .now, .lv-mono .fg-dial .now { stroke: currentColor; stroke-width: 4; }
+      .lv-gray16 .bl.cap-cyanotype, .lv-gray4 .bl.cap-cyanotype, .lv-mono .bl.cap-cyanotype { background: #000 !important; color: #fff; }
+      .lv-gray16 .cy-edge, .lv-gray4 .cy-edge, .lv-mono .cy-edge { display: none; }
+      .lv-mono .tg-bg polygon { stroke: #000; stroke-width: 2px; }
+      .lv-gray16 .tg-bg polygon, .lv-gray4 .tg-bg polygon { fill: #fff; stroke: #000; }
+      .lv-mono .tg-bg polygon { fill: #fff; }
+      .lv-mono .fo-head, .lv-mono .fo-cap, .lv-mono .mu, .lv-mono .fg, .lv-mono .cy { -webkit-text-stroke: .35px currentColor; }
+
       /* chart labels */
       .cells i { position: relative; }
       .cells i b { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 2.1cqmin; font-weight: 800; line-height: 1; color: var(--ink); }
@@ -495,7 +674,7 @@ export default function render(shadow, ctx) {
       .lv-gray16 .tile, .lv-gray4 .tile, .lv-mono .tile { background: #fff; color: #000; }
       .lv-gray16 .pframe, .lv-gray4 .pframe, .lv-mono .pframe { background: #fff; box-shadow: 0 0 0 1px #000; }
       .lv-gray16 .nb, .lv-gray4 .nb, .lv-mono .nb { color: #000; background-color: #fff; border-right-color: #000; }
-      .lv-gray16 .tg, .lv-gray4 .tg, .lv-mono .tg { background: #fff; color: #000; border-color: #000; }
+      .lv-gray16 .tg, .lv-gray4 .tg, .lv-mono .tg { color: #000; }
       .lv-gray16 .tg::before, .lv-gray4 .tg::before, .lv-mono .tg::before { border-color: #000; background: #fff; }
       .lv-gray16 .tg-f, .lv-gray4 .tg-f, .lv-mono .tg-f { border-top-color: #000; }
       .lv-gray16 .po, .lv-gray4 .po, .lv-mono .po { background: #000; color: #fff; }

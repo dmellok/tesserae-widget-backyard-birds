@@ -23,7 +23,11 @@ Pictures, in the order the "pictures" option asks for them:
              bird and kept
   generated  an AI painting in the same plate style, made once per species
              through fal.ai from a reference photo, kept for good (experimental,
-             needs a fal key in the widget settings)
+             needs a fal key in the widget settings). Painting takes longer
+             than Tesserae gives a fetch, so it runs in a background thread
+             and the bird shows a photo until the painting is ready. The
+             admin page (blueprint() below) lists the paintings, keeps
+             earlier versions, and deletes or repaints them.
   photo      BirdNET-Go's own species thumbnail, or an openly licensed
              iNaturalist photo in demo mode
 
@@ -33,19 +37,23 @@ caption fonts, because the render sandbox has no network.
 Files in ctx["data_dir"]:
   result_<slug>.json    BirdNET-Go answer (TTL = refresh_min)
   img/                  fetched originals and resized copies
-  gen/                  AI paintings, their credits and the daily budget
+  gen/                  AI paintings, their credits, the daily budget, the
+                        last failure per bird and which ones replace a plate
+  gen/archive/          earlier paintings kept when a bird is repainted
 """
 
 from __future__ import annotations
 
 import base64
 import contextlib
+import contextvars
 import hashlib
 import io
 import json
 import os
 import random
 import re
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -65,14 +73,32 @@ COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
 GEN_DAILY_CAP = 12
 GEN_TIMEOUT_S = 120
+# A failed painting is not retried for this long, so a bad key or an empty
+# fal balance costs one attempt per bird, not one per refresh.
+GEN_RETRY_S = 6 * 3600
 
 ERR_UNREACHABLE = "Couldn't reach BirdNET-Go at {url}."
 ERR_AUTH = "BirdNET-Go asked for a login. Add an API token in this cell's settings."
 NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
+NOTE_PAINTING = "Painting the {name} with fal.ai; it appears on a later refresh."
+NOTE_GEN_FAILED = "AI painting of the {name} failed: {why}"
+NOTE_GEN_CAP = "AI paintings: today's limit of {cap} is used up."
 
 LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed")
-CAPTIONS = ("band", "editorial", "notebook", "tag", "poster")
+CAPTIONS = (
+    "band",
+    "editorial",
+    "notebook",
+    "tag",
+    "poster",
+    "folio",
+    "museum",
+    "figure",
+    "cyanotype",
+)
 PICTURES = ("plate_photo", "plate_gen", "gen", "photo", "none")
+# A photo shown among plates is toned to a warm monotone by default.
+PHOTO_TONES = ("toned", "natural")
 # What the panel can show. A page is composed once and quantised per device
 # afterwards, so the widget cannot learn this at render time; the cell says.
 LEVELS = ("colour", "gray16", "gray4", "mono")
@@ -89,6 +115,10 @@ FONT_GROUPS = {
     "tag": ("special_elite",),
     "poster": ("archivo_black", "archivo_narrow"),
     "engraved": ("im_fell", "im_fell_sc"),
+    "folio": ("im_fell", "im_fell_sc"),
+    "museum": ("im_fell", "im_fell_sc", "caveat"),
+    "figure": ("im_fell", "im_fell_sc"),
+    "cyanotype": ("im_fell", "im_fell_sc"),
 }
 
 
@@ -172,6 +202,7 @@ def _http(
     auth_scheme: str = "Bearer",
     body: bytes | None = None,
     timeout: float = HTTP_TIMEOUT_S,
+    detail: bool = False,
 ) -> tuple[bytes | None, str | None]:
     headers = {"User-Agent": USER_AGENT, "Accept": accept}
     if token:
@@ -184,9 +215,18 @@ def _http(
             data = resp.read(IMG_MAX_BYTES + 1)
             return (None, "too large") if len(data) > IMG_MAX_BYTES else (data, None)
     except urllib.error.HTTPError as err:
-        if err.code in (401, 403):
+        if err.code in (401, 403) and not detail:
             return None, "auth"
-        return None, f"HTTP {err.code}"
+        why = f"HTTP {err.code}"
+        if detail:
+            with contextlib.suppress(Exception):
+                body = json.loads(err.read(20_000).decode("utf-8", "replace"))
+                msg = body.get("detail") if isinstance(body, dict) else None
+                if isinstance(msg, list) and msg and isinstance(msg[0], dict):
+                    msg = msg[0].get("msg")
+                if isinstance(msg, str) and msg.strip():
+                    why += f": {msg.strip()[:160]}"
+        return None, why
     except (urllib.error.URLError, TimeoutError, OSError, ValueError):
         return None, "unreachable"
 
@@ -647,6 +687,177 @@ GEN_PROMPT = (
     "cream paper background, generous margins. No text, no lettering, no border, no signature."
 )
 
+# Birds being painted right now, by slug, so two renders never start the same
+# one. Paintings run in daemon threads that outlive the fetch that started
+# them: fal takes 15 to 60 seconds and Tesserae gives a fetch about six.
+_PAINTING: set[str] = set()
+_PAINTING_LOCK = threading.Lock()
+
+
+def _gen_dir(data_dir: Path) -> Path:
+    folder = data_dir / "gen"
+    with contextlib.suppress(OSError):
+        folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _read_json(path: Path, default: Any) -> Any:
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        return json.loads(path.read_text(encoding="utf-8"))
+    return default
+
+
+def _budget_used(folder: Path) -> int:
+    used = _read_json(folder / "budget.json", {})
+    return int(used.get(time.strftime("%Y-%m-%d"), 0)) if isinstance(used, dict) else 0
+
+
+def _spend_budget(folder: Path) -> None:
+    today = time.strftime("%Y-%m-%d")
+    _write(
+        folder / "budget.json",
+        json.dumps({today: _budget_used(folder) + 1}).encode(),
+    )
+
+
+def _prefers_painting(data_dir: Path, slug: str) -> bool:
+    """True when the admin page marked this bird's painting to replace its plate."""
+    prefs = _read_json(_gen_dir(data_dir) / "prefs.json", {})
+    return bool(isinstance(prefs, dict) and (prefs.get(slug) or {}).get("prefer"))
+
+
+def _drop_derived(folder: Path, slug: str) -> None:
+    """Remove the resized copies and paper colours made from a bird's active
+    painting, after it is replaced or deleted."""
+    pattern = re.compile(rf"{re.escape(slug)}(_\d+(_\w+)?\.jpg|(_\w+)?\.paper)")
+    with contextlib.suppress(OSError):
+        for f in folder.iterdir():
+            if pattern.fullmatch(f.name):
+                with contextlib.suppress(OSError):
+                    f.unlink()
+
+
+def _paint(name: str, sci: str, data_dir: Path, key: str) -> str | None:
+    """Make one painting and keep it as the bird's active one. Blocking: run
+    it through _start_painting. Returns None, or why it failed (also kept in
+    <slug>.err so renders and the admin page can say so)."""
+    folder = _gen_dir(data_dir)
+    slug = _slug(sci or name)
+    err_path = folder / f"{slug}.err"
+
+    def fail(why: str) -> str:
+        _write(err_path, json.dumps({"why": why, "at": int(time.time())}).encode())
+        return why
+
+    ref_url, ref_credit = _inat_ref(sci, data_dir) if sci else ("", "")
+    if not ref_url:
+        return fail("no openly licensed reference photo on iNaturalist")
+    _spend_budget(folder)
+    body = json.dumps(
+        {
+            "prompt": GEN_PROMPT.format(name=name, sci=sci),
+            "image_urls": [ref_url],
+            "num_images": 1,
+            "output_format": "jpeg",
+            "aspect_ratio": "3:4",
+        }
+    ).encode()
+    answer, err = _json(
+        FAL_EDIT, key, auth_scheme="Key", body=body, timeout=GEN_TIMEOUT_S, detail=True
+    )
+    if err:
+        if err.startswith(("HTTP 401", "HTTP 403")):
+            err = "fal.ai refused the key or the account has no balance (" + err + ")"
+        return fail(err if err.startswith("fal") else f"fal.ai answered {err}")
+    images = answer.get("images") if isinstance(answer, dict) else None
+    out_url = str(images[0].get("url") or "") if images else ""
+    raw, err = (
+        _http(out_url, accept="image/*", timeout=60) if out_url else (None, "no image")
+    )
+    if not raw:
+        return fail(f"fal.ai sent no picture ({err})")
+    credit = "AI painting (fal.ai nano-banana)" + (
+        f" after {ref_credit}" if ref_credit else ""
+    )
+    img = folder / f"{slug}.jpg"
+    if img.exists():  # a repaint: the old one is kept, not lost
+        _archive(folder, slug)
+    meta = {"credit": credit, "made": int(time.time()), "name": name, "sci": sci}
+    _write(folder / f"{slug}.json", json.dumps(meta).encode())
+    _write(img, raw)
+    _drop_derived(folder, slug)
+    with contextlib.suppress(OSError):
+        err_path.unlink()
+    return None
+
+
+def _archive(folder: Path, slug: str) -> None:
+    """Move a bird's active painting (and its credit) into gen/archive/."""
+    arch = folder / "archive"
+    arch.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    with contextlib.suppress(OSError):
+        os.replace(folder / f"{slug}.jpg", arch / f"{slug}__{stamp}.jpg")
+    with contextlib.suppress(OSError):
+        os.replace(folder / f"{slug}.json", arch / f"{slug}__{stamp}.json")
+    _drop_derived(folder, slug)
+
+
+def _start_painting(name: str, sci: str, data_dir: Path, key: str) -> bool:
+    """Start a painting in the background. False if one is already running
+    for this bird. The thread carries the caller's context, so the widget's
+    network capability scope still applies to it."""
+    slug = _slug(sci or name)
+    with _PAINTING_LOCK:
+        if slug in _PAINTING:
+            return False
+        _PAINTING.add(slug)
+
+    def run() -> None:
+        try:
+            _paint(name, sci, data_dir, key)
+        except Exception as err:  # noqa: BLE001 - a thread must not die loudly
+            _write(
+                _gen_dir(data_dir) / f"{slug}.err",
+                json.dumps({"why": str(err)[:200], "at": int(time.time())}).encode(),
+            )
+        finally:
+            with _PAINTING_LOCK:
+                _PAINTING.discard(slug)
+
+    ctx = contextvars.copy_context()
+    threading.Thread(
+        target=ctx.run, args=(run,), name=f"birds-paint-{slug}", daemon=True
+    ).start()
+    return True
+
+
+def _painting(
+    row: dict[str, Any], size: int, data_dir: Path, levels: str = "colour"
+) -> dict[str, Any] | None:
+    """The bird's kept painting, resized for the layout, or None."""
+    folder = _gen_dir(data_dir)
+    slug = _slug(row["sci"] or row["name"])
+    img = folder / f"{slug}.jpg"
+    if not img.exists():
+        return None
+    meta = _read_json(folder / f"{slug}.json", {})
+    credit = str(meta.get("credit") or "AI painting") if isinstance(meta, dict) else ""
+    try:
+        raw = img.read_bytes()
+    except OSError:
+        return None
+    src = _render(raw, size, None, folder / f"{slug}_{size}.jpg", levels)
+    if not src:
+        return None
+    return {
+        "src": src,
+        "kind": "generated",
+        "credit": credit or "AI painting",
+        "focus": [0.5, 0.45],
+        "paper": _paper(src, folder / f"{slug}.paper", levels),
+    }
+
 
 def _generated(
     row: dict[str, Any],
@@ -655,98 +866,38 @@ def _generated(
     key: str,
     allow_new: bool,
     levels: str = "colour",
-) -> tuple[dict[str, Any] | None, bool]:
-    """(picture, made_one). Reads a kept painting, or makes one when allowed.
-
-    One new painting per fetch at most, and GEN_DAILY_CAP a day, so a busy
-    morning fills in over a few refreshes instead of one slow, costly render.
-    An exclusive lock file stops two renders paying for the same bird."""
-    folder = data_dir / "gen"
-    folder.mkdir(parents=True, exist_ok=True)
+) -> tuple[dict[str, Any] | None, bool, str | None]:
+    """(picture, started_one, notice). Reads a kept painting, or starts one in
+    the background when allowed: one new painting per fetch at most, and
+    GEN_DAILY_CAP a day, so a busy morning fills in over a few refreshes. A
+    bird whose painting failed is left alone for GEN_RETRY_S and the failure
+    is shown as a notice."""
+    pic = _painting(row, size, data_dir, levels)
+    if pic is not None:
+        return pic, False, None
+    folder = _gen_dir(data_dir)
     slug = _slug(row["sci"] or row["name"])
-    img, meta = folder / f"{slug}.jpg", folder / f"{slug}.json"
-    if img.exists():
-        credit = "AI painting"
-        with contextlib.suppress(OSError, json.JSONDecodeError):
-            credit = str(
-                json.loads(meta.read_text(encoding="utf-8")).get("credit") or credit
-            )
-        src = _render(
-            img.read_bytes(), size, None, folder / f"{slug}_{size}.jpg", levels
+    with _PAINTING_LOCK:
+        busy = slug in _PAINTING
+    if busy:
+        return None, False, NOTE_PAINTING.format(name=row["name"])
+    failed = _read_json(folder / f"{slug}.err", None)
+    if (
+        isinstance(failed, dict)
+        and time.time() - float(failed.get("at") or 0) < GEN_RETRY_S
+    ):
+        return (
+            None,
+            False,
+            NOTE_GEN_FAILED.format(name=row["name"], why=failed.get("why")),
         )
-        if not src:
-            return None, False
-        paper = _paper(src, folder / f"{slug}.paper", levels)
-        return {
-            "src": src,
-            "kind": "generated",
-            "credit": credit,
-            "focus": [0.5, 0.45],
-            "paper": paper,
-        }, False
     if not (allow_new and key):
-        return None, False
-
-    budget_path = folder / "budget.json"
-    today = time.strftime("%Y-%m-%d")
-    budget: dict[str, int] = {}
-    with contextlib.suppress(OSError, json.JSONDecodeError):
-        budget = json.loads(budget_path.read_text(encoding="utf-8"))
-    if budget.get(today, 0) >= GEN_DAILY_CAP:
-        return None, False
-    lock = folder / f"{slug}.lock"
-    with contextlib.suppress(OSError):
-        if time.time() - lock.stat().st_mtime > 600:
-            lock.unlink()
-    try:
-        os.close(os.open(lock, os.O_CREAT | os.O_EXCL))
-    except OSError:
-        return None, False
-    try:
-        ref_url, ref_credit = _inat_ref(row["sci"], data_dir)
-        if not ref_url:
-            return None, False
-        body = json.dumps(
-            {
-                "prompt": GEN_PROMPT.format(name=row["name"], sci=row["sci"]),
-                "image_urls": [ref_url],
-                "num_images": 1,
-                "output_format": "jpeg",
-                "aspect_ratio": "3:4",
-            }
-        ).encode()
-        answer, err = _json(
-            FAL_EDIT, key, auth_scheme="Key", body=body, timeout=GEN_TIMEOUT_S
-        )
-        budget[today] = budget.get(today, 0) + 1
-        with contextlib.suppress(OSError):
-            budget_path.write_text(json.dumps({today: budget[today]}), encoding="utf-8")
-        images = answer.get("images") if isinstance(answer, dict) and not err else None
-        out_url = str(images[0].get("url") or "") if images else ""
-        raw, _ = (
-            _http(out_url, accept="image/*", timeout=60) if out_url else (None, None)
-        )
-        if not raw:
-            return None, True
-        credit = "AI painting (fal.ai nano-banana)" + (
-            f" after {ref_credit}" if ref_credit else ""
-        )
-        _write(meta, json.dumps({"credit": credit, "made": int(time.time())}).encode())
-        _write(img, raw)
-        src = _render(raw, size, None, folder / f"{slug}_{size}.jpg", levels)
-        if not src:
-            return None, True
-        paper = _paper(src, folder / f"{slug}.paper", levels)
-        return {
-            "src": src,
-            "kind": "generated",
-            "credit": credit,
-            "focus": [0.5, 0.45],
-            "paper": paper,
-        }, True
-    finally:
-        with contextlib.suppress(OSError):
-            lock.unlink()
+        return None, False, None
+    if _budget_used(folder) >= GEN_DAILY_CAP:
+        return None, False, NOTE_GEN_CAP.format(cap=GEN_DAILY_CAP)
+    if _start_painting(row["name"], row["sci"], data_dir, key):
+        return None, True, NOTE_PAINTING.format(name=row["name"])
+    return None, False, NOTE_PAINTING.format(name=row["name"])
 
 
 def _attach_pictures(
@@ -768,22 +919,31 @@ def _attach_pictures(
     if wants_gen and not fal_key:
         notices.append(NOTE_NO_KEY)
 
-    def plate_or_photo(row: dict[str, Any]) -> dict[str, Any] | None:
-        pic = _plate(row["sci"], pack, size, data_dir, levels) if pack else None
-        return pic
+    def plate_for(row: dict[str, Any]) -> dict[str, Any] | None:
+        # a painting marked on the admin page to replace the plate wins
+        if _prefers_painting(data_dir, _slug(row["sci"] or row["name"])):
+            pic = _painting(row, size, data_dir, levels)
+            if pic is not None:
+                return pic
+        return _plate(row["sci"], pack, size, data_dir, levels)
 
     # Plates and photos are independent fetches, so they run side by side; a
-    # generated painting is at most one per fetch and runs after.
+    # generated painting is at most one new one per fetch, in the background.
     with ThreadPoolExecutor(max_workers=6) as pool:
-        plates = list(pool.map(plate_or_photo, rows)) if pack else [None] * len(rows)
-    made = False
+        plates = list(pool.map(plate_for, rows)) if pack else [None] * len(rows)
+    started = False
     for row, plate in zip(rows, plates, strict=True):
         pic = plate
         if pic is None and wants_gen:
-            pic, did = _generated(
-                row, size, data_dir, fal_key, allow_new=not made, levels=levels
+            pic, did, note = _generated(
+                row, size, data_dir, fal_key, allow_new=not started, levels=levels
             )
-            made = made or did
+            started = started or did
+            if note and note not in notices:
+                notices.append(note)
+        elif pic is None and pack:
+            # a painting kept from before still beats a photo among plates
+            pic = _painting(row, size, data_dir, levels)
         row["pic"] = pic
     missing = [r for r in rows if not r.get("pic")]
     with ThreadPoolExecutor(max_workers=6) as pool:
@@ -839,6 +999,7 @@ def fetch(
     layout = _choice(options.get("layout"), LAYOUTS)
     caption = _choice(options.get("caption"), CAPTIONS)
     pictures = _choice(options.get("pictures"), PICTURES)
+    photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
     levels = _choice(options.get("panel"), LEVELS)
     chart_labels = _choice(options.get("chart_labels"), CHART_LABELS)
     sort = "count" if options.get("sort") == "count" else "recent"
@@ -881,6 +1042,10 @@ def fetch(
     latest = (
         dict(max(species, key=lambda s: _minutes(s["last"]) or 0)) if species else None
     )
+    if latest:
+        # which bird of the day this was, by first heard: the folio's plate number
+        firsts = sorted(_minutes(s.get("first") or "") or 0 for s in species)
+        latest["order"] = firsts.index(_minutes(latest.get("first") or "") or 0) + 1
 
     # Pictures only where the layout draws them: one big one for the single
     # bird layouts, a thumbnail per row for the list and gallery.
@@ -920,6 +1085,7 @@ def fetch(
         "layout": layout,
         "caption": caption,
         "pictures": pictures,
+        "photo_tone": photo_tone,
         "panel": levels,
         "chart_labels": chart_labels,
         "sort": sort,
@@ -940,3 +1106,294 @@ def fetch(
         "font_css": _font_css(groups),
         "empty": not species,
     }
+
+
+# ----------------------------------------------------------------------
+# Admin page: the AI paintings
+# ----------------------------------------------------------------------
+
+_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}")
+_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60})__(\d{8}-\d{6})")
+
+
+def _known_birds(data_dir: Path) -> list[tuple[str, str]]:
+    """(common name, scientific name) for the admin page's picker: birds
+    BirdNET-Go reported to this widget, then the demo gardens."""
+    seen: dict[str, str] = {}
+    with contextlib.suppress(OSError):
+        for f in sorted(data_dir.glob("result_*.json")):
+            raw = _read_json(f, {})
+            for s in raw.get("species", []) if isinstance(raw, dict) else []:
+                if isinstance(s, dict) and s.get("sci"):
+                    seen.setdefault(str(s["sci"]), str(s.get("name") or s["sci"]))
+    for birds in _DEMO.values():
+        for name, sci, _w, _p in birds:
+            seen.setdefault(sci, name)
+    return sorted(((n, sci) for sci, n in seen.items()), key=lambda b: b[0].lower())
+
+
+def _gallery(data_dir: Path) -> dict[str, Any]:
+    """Everything the admin page shows, read from gen/."""
+    folder = _gen_dir(data_dir)
+    prefs = _read_json(folder / "prefs.json", {})
+    prefs = prefs if isinstance(prefs, dict) else {}
+    birds: dict[str, dict[str, Any]] = {}
+
+    def bird(slug: str) -> dict[str, Any]:
+        return birds.setdefault(
+            slug,
+            {
+                "slug": slug,
+                "name": slug.replace("_", " ").capitalize(),
+                "sci": "",
+                "active": None,
+                "archive": [],
+                "error": None,
+                "prefer": bool((prefs.get(slug) or {}).get("prefer")),
+            },
+        )
+
+    with contextlib.suppress(OSError):
+        for f in folder.glob("*.jpg"):
+            if (
+                not _SLUG_RE.fullmatch(f.stem)
+                or not (folder / f"{f.stem}.json").exists()
+            ):
+                continue  # a resized copy, not a painting
+            meta = _read_json(folder / f"{f.stem}.json", {})
+            b = bird(f.stem)
+            b["name"] = str(meta.get("name") or b["name"])
+            b["sci"] = str(meta.get("sci") or "")
+            b["active"] = {
+                "file": f.name,
+                "credit": str(meta.get("credit") or ""),
+                "made": time.strftime(
+                    "%d %b %Y",
+                    time.localtime(int(meta.get("made") or f.stat().st_mtime)),
+                ),
+            }
+        for f in sorted((folder / "archive").glob("*.jpg"), reverse=True):
+            m = _ARCHIVED_RE.fullmatch(f.stem)
+            if not m:
+                continue
+            meta = _read_json(f.with_suffix(".json"), {})
+            b = bird(m.group(1))
+            if not b["sci"]:
+                b["name"] = str(meta.get("name") or b["name"])
+                b["sci"] = str(meta.get("sci") or "")
+            b["archive"].append(
+                {
+                    "file": f.name,
+                    "made": datetime.strptime(m.group(2), "%Y%m%d-%H%M%S").strftime(
+                        "%d %b"
+                    ),
+                }
+            )
+        for f in folder.glob("*.err"):
+            if _SLUG_RE.fullmatch(f.stem):
+                err = _read_json(f, {})
+                bird(f.stem)["error"] = str(err.get("why") or "failed")
+    with _PAINTING_LOCK:
+        running = set(_PAINTING)
+    for slug, b in birds.items():
+        b["painting"] = slug in running
+    # a bird with only a failed attempt has no saved names: find them by slug
+    known = {_slug(sci): (n, sci) for n, sci in _known_birds(data_dir)}
+    for b in birds.values():
+        if b["slug"] in known:
+            name, sci = known[b["slug"]]
+            b["sci"] = b["sci"] or sci
+            if b["name"].lower() == b["slug"].replace("_", " "):
+                b["name"] = name
+    ordered = sorted(
+        birds.values(), key=lambda b: (b["active"] is None, b["name"].lower())
+    )
+    return {
+        "birds": ordered,
+        "used": _budget_used(folder),
+        "cap": GEN_DAILY_CAP,
+        "running": sorted(running),
+    }
+
+
+def blueprint() -> Any:
+    """The admin page at /plugins/<id>/: every AI painting this widget has
+    made, with earlier versions kept, and buttons to repaint, delete, bring
+    back an earlier version, or use a painting instead of a bird's plate."""
+    from flask import (
+        Blueprint,
+        abort,
+        current_app,
+        flash,
+        redirect,
+        render_template,
+        request,
+        send_from_directory,
+        url_for,
+    )
+
+    bp = Blueprint("backyard_birds_admin", __name__, template_folder="templates")
+
+    def plugin() -> Any:
+        registry = current_app.config["PLUGIN_REGISTRY"]
+        for p in registry.plugins.values():
+            with contextlib.suppress(OSError, AttributeError):
+                if Path(p.path).resolve() == HERE:
+                    return p
+        abort(404)
+
+    def data_dir() -> Path:
+        path = Path(plugin().data_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def fal_key() -> str:
+        store = current_app.config.get("SETTINGS_STORE")
+        if store is None:
+            return ""
+        p = plugin()
+        settings = store.get_for_runtime(
+            "plugins", p.id, p.manifest.get("settings", [])
+        )
+        return str((settings or {}).get("fal_api_key") or "").strip()
+
+    def slug_or_404(slug: str) -> str:
+        if not _SLUG_RE.fullmatch(slug):
+            abort(404)
+        return slug
+
+    def back() -> Any:
+        return redirect(url_for("backyard_birds_admin.index"))
+
+    def start(name: str, sci: str) -> None:
+        key = fal_key()
+        folder = _gen_dir(data_dir())
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+        elif _budget_used(folder) >= GEN_DAILY_CAP:
+            flash(f"Today's limit of {GEN_DAILY_CAP} paintings is used up.", "warn")
+        elif not _start_painting(name, sci, data_dir(), key):
+            flash(f"The {name} is already being painted.", "info")
+        else:
+            with contextlib.suppress(OSError):
+                (folder / f"{_slug(sci or name)}.err").unlink()
+            flash(
+                f"Painting the {name}. It takes up to a minute; reload this page to see it.",
+                "success",
+            )
+
+    @bp.get("/")
+    def index() -> str:
+        dd = data_dir()
+        return render_template(
+            "backyard_birds/admin.html",
+            g=_gallery(dd),
+            known=_known_birds(dd),
+            has_key=bool(fal_key()),
+        )
+
+    @bp.get("/painting/<path:name>")
+    def image(name: str) -> Any:
+        folder = _gen_dir(data_dir())
+        stem, _, ext = name.rpartition(".")
+        if ext != "jpg":
+            abort(404)
+        if _SLUG_RE.fullmatch(stem):
+            return send_from_directory(folder, name)
+        if stem.startswith("archive/") and _ARCHIVED_RE.fullmatch(stem[8:]):
+            return send_from_directory(folder / "archive", name[8:])
+        abort(404)
+
+    @bp.post("/paint")
+    def paint() -> Any:
+        sci = request.form.get("sci", "").strip()
+        name = request.form.get("name", "").strip()
+        if not name:
+            name = dict((s, n) for n, s in _known_birds(data_dir())).get(sci, sci)
+        if not sci or not re.fullmatch(r"[A-Z][a-z]+ [a-z-]+( [a-z-]+)?", sci):
+            flash("Give the scientific name, for example Turdus merula.", "warn")
+            return back()
+        start(name[:80], sci)
+        return back()
+
+    @bp.post("/<slug>/repaint")
+    def repaint(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        b = next((b for b in _gallery(data_dir())["birds"] if b["slug"] == slug), None)
+        if b is None or not b["sci"]:
+            abort(404)
+        start(b["name"], b["sci"])
+        return back()
+
+    @bp.post("/<slug>/delete")
+    def delete(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        folder = _gen_dir(data_dir())
+        for f in (
+            folder / f"{slug}.jpg",
+            folder / f"{slug}.json",
+            folder / f"{slug}.err",
+        ):
+            with contextlib.suppress(OSError):
+                f.unlink()
+        _drop_derived(folder, slug)
+        flash(
+            "Painting deleted. With an AI picture option on, the bird is painted again the next time it is shown.",
+            "success",
+        )
+        return back()
+
+    @bp.post("/<slug>/prefer")
+    def prefer(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        folder = _gen_dir(data_dir())
+        prefs = _read_json(folder / "prefs.json", {})
+        prefs = prefs if isinstance(prefs, dict) else {}
+        on = request.form.get("on") == "1"
+        if on:
+            prefs[slug] = {"prefer": True}
+        else:
+            prefs.pop(slug, None)
+        _write(folder / "prefs.json", json.dumps(prefs).encode())
+        return back()
+
+    @bp.post("/<slug>/clear-error")
+    def clear_error(slug: str) -> Any:
+        slug = slug_or_404(slug)
+        with contextlib.suppress(OSError):
+            (_gen_dir(data_dir()) / f"{slug}.err").unlink()
+        return back()
+
+    @bp.post("/archive/<stem>/use")
+    def use_archived(stem: str) -> Any:
+        m = _ARCHIVED_RE.fullmatch(stem)
+        if not m:
+            abort(404)
+        folder = _gen_dir(data_dir())
+        slug, src = m.group(1), folder / "archive" / f"{stem}.jpg"
+        if not src.exists():
+            abort(404)
+        meta = _read_json(src.with_suffix(".json"), {})
+        if (folder / f"{slug}.jpg").exists():
+            _archive(folder, slug)
+        os.replace(src, folder / f"{slug}.jpg")
+        if not isinstance(meta, dict) or not meta:
+            meta = {"credit": "AI painting", "made": int(time.time())}
+        _write(folder / f"{slug}.json", json.dumps(meta).encode())
+        with contextlib.suppress(OSError):
+            src.with_suffix(".json").unlink()
+        _drop_derived(folder, slug)
+        flash("That version is the bird's painting again.", "success")
+        return back()
+
+    @bp.post("/archive/<stem>/delete")
+    def delete_archived(stem: str) -> Any:
+        if not _ARCHIVED_RE.fullmatch(stem):
+            abort(404)
+        arch = _gen_dir(data_dir()) / "archive"
+        for f in (arch / f"{stem}.jpg", arch / f"{stem}.json"):
+            with contextlib.suppress(OSError):
+                f.unlink()
+        return back()
+
+    return bp

@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others. Six layouts, from a field log to a full-bleed plate. Colour, greyscale and black-and-white panels. Runs a demo garden until you point it at BirdNET-Go.",
   "icon": "ph-bird",
@@ -22,7 +22,7 @@
       "label": "fal.ai API key (AI paintings, experimental)",
       "secret": true,
       "default": "",
-      "help": "Only needed for the AI painting picture options. Each bird is painted once, from an openly licensed reference photo, and kept, at about US$0.04 a bird and at most 12 a day. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
+      "help": "Only needed for the AI painting picture options. Each bird is painted once, from an openly licensed reference photo, in the background (it shows on a later refresh), and kept, at about US$0.04 a bird and at most 12 a day. Manage the paintings on this widget's page under Widgets. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
     }
   ],
   "cell_options": [
@@ -78,7 +78,7 @@
       "type": "select",
       "label": "Caption style (full bleed)",
       "default": "band",
-      "help": "Only used by the full bleed layout. The serif and handwritten styles have fine strokes that suit colour and greyscale panels better than black and white ones.",
+      "help": "Only used by the full bleed layout. Folio, museum, figure and cyanotype are natural-history styles: a double-ruled plate numbered by which bird of the day it was, a museum collection label, a 24-hour dial of the bird's calls, and a white-on-blue photogram. The serif and handwritten styles have fine strokes that suit colour and greyscale panels better than black and white ones.",
       "choices": [
         {
           "value": "band",
@@ -99,6 +99,22 @@
         {
           "value": "poster",
           "label": "Poster"
+        },
+        {
+          "value": "folio",
+          "label": "Folio plate"
+        },
+        {
+          "value": "museum",
+          "label": "Museum label"
+        },
+        {
+          "value": "figure",
+          "label": "Scientific figure"
+        },
+        {
+          "value": "cyanotype",
+          "label": "Cyanotype"
         }
       ]
     },
@@ -128,6 +144,23 @@
         {
           "value": "none",
           "label": "None"
+        }
+      ]
+    },
+    {
+      "name": "photo_tone",
+      "type": "select",
+      "label": "Photo colour",
+      "default": "toned",
+      "help": "With classic plates on, a photo standing in for a bird without a plate is toned sepia so the set matches. Natural colour leaves photos as they are.",
+      "choices": [
+        {
+          "value": "toned",
+          "label": "Toned to match the plates"
+        },
+        {
+          "value": "natural",
+          "label": "Natural colour"
         }
       ]
     },

@@ -1,0 +1,147 @@
+{% extends "_base.html" %}
+{% from "_components.html" import card_head, button, empty_state %}
+{% block title %}Backyard Birds paintings, Tesserae{% endblock %}
+
+{% block main %}
+<div class="page-head">
+  <h1><i class="ph-bold ph-bird" aria-hidden="true"></i> Backyard Birds paintings</h1>
+  <p class="page-blurb">The AI paintings this widget has made through fal.ai. Each bird keeps one painting and reuses it on every render. Repainting keeps the old version below it, so you can go back to it or delete it.</p>
+</div>
+
+<section class="card">
+  {{ card_head('Paint a bird', icon_name='paint-brush', level=2,
+               blurb='Paints one bird now, from an openly licensed iNaturalist photo, at about US$0.04. Useful for a bird that has a classic plate, so you can compare the two and choose.') }}
+  <p class="bb-budget">
+    {{ g.used }} of {{ g.cap }} paintings used today.
+    {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
+    {% if g.running %}Painting now: {{ g.running|join(', ')|replace('_', ' ') }}. Reload in a minute.{% endif %}
+  </p>
+  <form method="post" action="{{ url_for('backyard_birds_admin.paint') }}" class="form bb-paint">
+    <div class="field">
+      <label for="bb-sci">Bird</label>
+      <input type="text" id="bb-sci" name="sci" list="bb-known" placeholder="Turdus merula" required autocomplete="off">
+      <datalist id="bb-known">
+        {% for name, sci in known %}<option value="{{ sci }}">{{ name }}</option>{% endfor %}
+      </datalist>
+      <p class="field-help">Scientific name. Birds BirdNET-Go has reported and the demo gardens' birds are suggested.</p>
+    </div>
+    <div class="field">
+      <label for="bb-name">Common name (optional)</label>
+      <input type="text" id="bb-name" name="name" placeholder="Eurasian Blackbird">
+    </div>
+    <div class="actions">{{ button('Paint', icon='paint-brush', disabled=not has_key) }}</div>
+  </form>
+</section>
+
+<section class="card">
+  {{ card_head('Paintings', icon_name='images', level=2) }}
+  {% if g.birds %}
+  <div class="bb-grid">
+    {% for b in g.birds %}
+    <article class="bb-bird">
+      <header class="bb-bird-head">
+        <div>
+          <h3>{{ b.name }}</h3>
+          {% if b.sci %}<i>{{ b.sci }}</i>{% endif %}
+        </div>
+        {% if b.painting %}<span class="bb-tag">painting…</span>{% endif %}
+      </header>
+      {% if b.active %}
+      <a href="{{ url_for('backyard_birds_admin.image', name=b.active.file) }}" target="_blank" rel="noopener" class="bb-main">
+        <img src="{{ url_for('backyard_birds_admin.image', name=b.active.file) }}" alt="{{ b.name }}" loading="lazy">
+      </a>
+      <p class="bb-meta">Made {{ b.active.made }} · {{ b.active.credit }}</p>
+      <form method="post" action="{{ url_for('backyard_birds_admin.prefer', slug=b.slug) }}" class="bb-prefer">
+        <input type="hidden" name="on" value="{{ '0' if b.prefer else '1' }}">
+        <label class="bb-check"><input type="checkbox" {% if b.prefer %}checked{% endif %} onchange="this.form.submit()">
+          Use instead of the classic plate</label>
+      </form>
+      {% else %}
+      <p class="bb-none">No current painting.{% if b.archive %} Bring back an earlier one below, or repaint.{% endif %}</p>
+      {% endif %}
+      {% if b.error %}
+      <div class="bb-error">
+        <span><i class="ph ph-warning" aria-hidden="true"></i> Last try failed: {{ b.error }}</span>
+        <form method="post" action="{{ url_for('backyard_birds_admin.clear_error', slug=b.slug) }}">
+          <button type="submit" class="ghost" title="Let the widget try this bird again">Clear</button>
+        </form>
+      </div>
+      {% endif %}
+      <div class="bb-actions">
+        {% if b.sci %}
+        <form method="post" action="{{ url_for('backyard_birds_admin.repaint', slug=b.slug) }}"
+              onsubmit="return confirm('Paint the {{ b.name }} again (about US$0.04)? The current painting is kept below.');">
+          {{ button('Repaint', icon='arrows-clockwise', variant='ghost', disabled=not has_key or b.painting) }}
+        </form>
+        {% endif %}
+        {% if b.active %}
+        <form method="post" action="{{ url_for('backyard_birds_admin.delete', slug=b.slug) }}"
+              onsubmit="return confirm('Delete the current painting of the {{ b.name }}? With an AI picture option on, it is painted again the next time it is shown.');">
+          {{ button('Delete', icon='trash', variant='ghost danger') }}
+        </form>
+        {% endif %}
+      </div>
+      {% if b.archive %}
+      <details class="bb-archive" {% if not b.active %}open{% endif %}>
+        <summary>{{ b.archive|length }} earlier version{{ '' if b.archive|length == 1 else 's' }}</summary>
+        <div class="bb-archive-grid">
+          {% for a in b.archive %}
+          <figure>
+            <a href="{{ url_for('backyard_birds_admin.image', name='archive/' ~ a.file) }}" target="_blank" rel="noopener">
+              <img src="{{ url_for('backyard_birds_admin.image', name='archive/' ~ a.file) }}" alt="{{ b.name }}, {{ a.made }}" loading="lazy">
+            </a>
+            <figcaption>
+              <span>{{ a.made }}</span>
+              <form method="post" action="{{ url_for('backyard_birds_admin.use_archived', stem=a.file[:-4]) }}">
+                <button type="submit" class="bb-icon" title="Use this version"><i class="ph ph-arrow-counter-clockwise" aria-hidden="true"></i></button>
+              </form>
+              <form method="post" action="{{ url_for('backyard_birds_admin.delete_archived', stem=a.file[:-4]) }}"
+                    onsubmit="return confirm('Delete this earlier version for good?');">
+                <button type="submit" class="bb-icon bb-icon--danger" title="Delete"><i class="ph ph-trash" aria-hidden="true"></i></button>
+              </form>
+            </figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+      </details>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ empty_state('paint-brush', 'No paintings yet',
+                 'Set a Backyard Birds cell\'s Pictures to one of the AI painting options, or paint a bird above.') }}
+  {% endif %}
+</section>
+
+<style>
+  .bb-budget { margin: 0 0 12px; color: var(--t-fg-soft); }
+  .bb-paint { display: grid; grid-template-columns: 2fr 2fr auto; gap: 12px; align-items: start; }
+  .bb-paint .field { margin: 0; }
+  .bb-paint .actions { margin: 24px 0 0; }
+  @media (max-width: 640px) { .bb-paint { grid-template-columns: 1fr; } .bb-paint .actions { margin: 0; } }
+  .bb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; align-items: start; }
+  .bb-bird { border: 1px solid var(--t-border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--t-surface); }
+  .bb-bird-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .bb-bird-head h3 { margin: 0; font-size: 15px; }
+  .bb-bird-head i { font-size: 12px; color: var(--t-fg-soft); }
+  .bb-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; background: var(--t-surface-hover); border-radius: 2px; }
+  .bb-main img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; background: #f3ead6; border-radius: 4px; }
+  .bb-meta, .bb-none { margin: 0; font-size: 12px; color: var(--t-fg-soft); }
+  .bb-check { display: flex; gap: 6px; align-items: center; font-size: 13px; cursor: pointer; }
+  .bb-prefer { margin: 0; }
+  .bb-error { display: flex; gap: 8px; align-items: center; justify-content: space-between; font-size: 12px; padding: 6px 8px; border-radius: 4px; background: var(--t-surface-hover); }
+  .bb-error form { margin: 0; }
+  .bb-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bb-actions form { margin: 0; }
+  .bb-archive summary { cursor: pointer; font-size: 13px; color: var(--t-fg-soft); }
+  .bb-archive-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; }
+  .bb-archive figure { margin: 0; border: 1px solid var(--t-border); border-radius: 4px; overflow: hidden; }
+  .bb-archive img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; background: #f3ead6; }
+  .bb-archive figcaption { display: flex; align-items: center; gap: 2px; padding: 2px 4px; font-size: 10px; color: var(--t-fg-soft); }
+  .bb-archive figcaption span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bb-archive figcaption form { margin: 0; }
+  .bb-icon { background: none; border: none; cursor: pointer; padding: 2px 3px; color: var(--t-fg-soft); font-size: 14px; }
+  .bb-icon--danger:hover { color: var(--t-danger, #c8281e); }
+</style>
+{% endblock %}
