@@ -170,21 +170,21 @@ function latest(d, showSci, tone) {
       </div>
       <div class="lside">
         <div class="lstats"><div class="a"><b>${d.species_today}</b><span>species today</span></div><div><b>${d.detections_today}</b><span>calls</span></div></div>
-        <div class="lalso"><div class="cap">Also heard today</div>${others.map((s) => `
-          <div class="arow"><span>${esc(s.name)}${tag(s)}</span><b>${s.count}</b></div>`).join('')}</div>
+        <div class="lalso"><div class="cap">Also heard today</div><div class="fitrows">${others.map((s) => `
+          <div class="arow"><span>${esc(s.name)}${tag(s)}</span><b>${s.count}</b></div>`).join('')}</div></div>
         <div class="lfoot2">${esc(d.label)} · ${esc(d.date)}</div>
       </div>
     </div>${foot(d)}`;
 }
 
 function gallery(d, _showSci, tone) {
-  const tiles = d.species.map((s) => `
+  const tiles = d.species.slice(0, 12).map((s) => `
     <div class="tile${s.new ? ' isnew' : ''}">
       ${pic(s.pic, 'tpic', tone)}
       <div class="tcap"><span>${esc(s.name)}</span><b>${s.count}</b></div>
       ${s.new ? '<div class="tnew">new today</div>' : ''}
     </div>`).join('');
-  return `${head(d)}<div class="grid n${Math.min(d.species.length, 8)}">${tiles}</div>${foot(d)}`;
+  return `${head(d)}<div class="grid n${Math.min(d.species.length, 12)}">${tiles}</div>${foot(d)}`;
 }
 
 function chart(d) {
@@ -205,9 +205,9 @@ function chart(d) {
     return `<i class="${l > 0.55 ? 'l3' : l > 0.25 ? 'l2' : 'l1'}">${show ? `<b>${v}</b>` : ''}</i>`;
   };
   return `${head(d)}
-    <div class="chart${labels !== 'none' ? ' labelled' : ''}">
+    <div class="chart${labels !== 'none' ? ' labelled' : ''}"><div class="crows">
       ${rows.map((s) => { const rowMax = Math.max(...hours.map((h) => s.hourly[h] || 0)); return `<div class="crow"><div class="cn">${esc(s.name)}${tag(s)}</div>
-        <div class="cells">${hours.map((h) => cell(s.hourly[h] || 0, h, rowMax)).join('')}</div><div class="cc">${s.count}</div></div>`; }).join('')}
+        <div class="cells">${hours.map((h) => cell(s.hourly[h] || 0, h, rowMax)).join('')}</div><div class="cc">${s.count}</div></div>`; }).join('')}</div>
       <div class="crow axis"><div class="cn"></div><div class="cells">${hours.map((h) => `<em>${h % 3 === 0 ? h : ''}</em>`).join('')}</div><div class="cc"></div></div>
     </div>`;
 }
@@ -286,6 +286,27 @@ function bleed(d, showSci, tone, caption) {
     cap = `<div class="cy-edge"></div><div class="cy">
       <div class="cy-n" style="${fit(`${main}.`, 6.4, 80, 0.46, true)}">${main}.</div>
       <div class="cy-s">${sci ? `${esc(L.name)} · ` : ''}heard ${L.count} times · ${esc(d.date)}</div></div>`;
+  } else if (caption === 'stamp') {
+    cap = `<div class="st-card"></div><div class="st-face"></div>
+      <div class="st-top">${esc(d.label)}</div>
+      <div class="st-val"><b>${L.count}</b><span>calls</span></div>
+      <div class="st-bot"><div class="st-n" style="${fit(L.name, 6.4, 70, 0.68, true)}">${esc(L.name)}</div>${sci ? `<div class="st-s">${sci}</div>` : ''}</div>`;
+  } else if (caption === 'woodblock') {
+    const seal = String(L.name || '').split(/[\s-]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('');
+    cap = `<div class="wb-col">
+        <div class="wb-title"><span>${esc(L.name)}</span></div>
+        ${sci ? `<div class="wb-sub"><span>${sci}</span></div>` : ''}
+      </div>
+      <div class="wb-note">heard ${L.count} times · ${esc(d.date)}</div>
+      <div class="wb-seal">${esc(seal)}</div>`;
+  } else if (caption === 'cameo') {
+    cap = `<div class="cm-ring"></div>
+      <div class="cm-cap"><div class="cm-n" style="${fit(L.name, 6.2, 70, 0.68, true)}">${esc(L.name)}</div>
+        <div class="cm-s">${sci ? `${sci} · ` : ''}heard ${esc(when)}</div></div>`;
+  } else if (caption === 'nouveau') {
+    cap = `<div class="nv-arch"></div>
+      <div class="nv-band"><div class="nv-n" style="${fit(L.name, 6.6, 66, 0.52, true)}">${esc(L.name)}</div>
+        <div class="nv-s">${sci ? `${sci} · ` : ''}${L.count} calls to-day</div></div>`;
   } else if (caption === 'tag') {
     cap = `<div class="tg"><svg class="tg-bg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,12 8,0 100,0 100,100 8,100 0,88"/></svg>
       <div class="tg-k">${esc(d.label).toUpperCase()} · NO. ${String(d.detections_today).padStart(4, '0')}</div>
@@ -312,8 +333,23 @@ function bleed(d, showSci, tone, caption) {
    it is the birds' own paintings blended into one scene (or, until that is
    ready, cut out and laid on one sheet); otherwise a numbered montage of
    their plates and photos, numbered to match the key. */
+function sheet(d, C) {
+  const labels = (C.birds || []).map((b) => {
+    const [x, y, w, h] = b.box;
+    return `<span class="sh-l" style="left:${((x + w / 2) * 100).toFixed(2)}%;top:${((y + h) * 100).toFixed(2)}%">${esc(b.name)}</span>`;
+  }).join('');
+  const waiting = (C.waiting || []).length;
+  return `
+    <div class="sh" style="background:${esc(C.pic.paper)}">
+      <div class="cl-sheet sh-s" style="--r:${C.ratio};--lf:${C.label}"><img src="${C.pic.src}" alt="">${labels}
+        <div class="sh-c">${esc(d.label)} · heard to-day · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to paint` : ''}</div>
+      </div>
+    </div>${foot(d)}`;
+}
+
 function cluster(d, showSci, tone) {
   const C = d.cluster || { birds: [] };
+  if (C.sheet && C.pic) return sheet(d, C);
   const birds = C.birds || [];
   const numbered = !C.pic;
   const art = C.pic
@@ -330,7 +366,7 @@ function cluster(d, showSci, tone) {
       <div class="cl-key">
         <div class="cl-k">${esc(d.label)} · ${esc(d.date)}</div>
         <div class="cl-t">Heard to-day</div>
-        <ol>${rows}</ol>
+        <ol class="fitrows">${rows}</ol>
         <div class="cl-f">${d.species_today} species · ${d.detections_today} calls to-day</div>${waiting}
       </div>
     </div>${foot(d)}`;
@@ -416,10 +452,12 @@ export default function render(shadow, ctx) {
       .hstat span { font-size: 2.1cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 
       /* list */
-      .rows { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
-      .row { flex: 1 1 0; min-height: 0; max-height: 14cqmin; display: flex; align-items: center; gap: 2.4cqmin; padding: 0 2.6cqmin; border-top: calc(var(--rule) * .6) solid var(--ink); }
+      .rows { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; overflow: hidden; }
+      .row { flex: 1 1 0; width: 100%; box-sizing: border-box; min-height: 8cqmin; max-height: 14cqmin; display: flex; align-items: center; gap: 2.4cqmin; padding: 0 2.6cqmin; border-top: calc(var(--rule) * .6) solid var(--ink); }
       .row:first-child { border-top: 0; }
       .rpic { height: 78%; aspect-ratio: 1; flex: 0 0 auto; overflow: hidden; }
+      /* padding in % is of the row's width here, so the icon box sizes in cqmin */
+      .rpic.nopic { padding: 1.2cqmin; box-sizing: border-box; }
       .rnm { flex: 1; min-width: 0; }
       .rcn { font-weight: 800; font-size: 3.6cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .rsn { font-size: 2.3cqmin; font-style: italic; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -450,7 +488,11 @@ export default function render(shadow, ctx) {
       .lstats > .a { background: var(--hi); }
       .lstats b { display: block; font-weight: 900; font-size: 6.4cqmin; line-height: 1; }
       .lstats span { font-size: 2.1cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-      .lalso { flex: 1; min-height: 0; overflow: hidden; padding: 1cqmin 2.4cqmin 0; }
+      .lalso { flex: 1; min-height: 0; overflow: hidden; padding: 1cqmin 2.4cqmin 0; display: flex; flex-direction: column; }
+      /* a list that shows whole rows only: rows that do not fit wrap into a
+         second column, which sits outside the box and is never seen */
+      .fitrows { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; overflow: hidden; align-content: flex-start; }
+      .fitrows > * { width: 100%; flex: 0 0 auto; box-sizing: border-box; }
       .cap { font-size: 2.2cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: .6cqmin 0 1cqmin; }
       .arow { display: flex; gap: 1.4cqmin; align-items: baseline; padding: 1.2cqmin 0; border-top: calc(var(--rule) * .6) solid var(--ink); font-size: 3cqmin; font-weight: 700; }
       .arow span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -459,7 +501,7 @@ export default function render(shadow, ctx) {
       @container (max-aspect-ratio: 1) {
         .lat { flex-direction: column; }
         .lpic { flex: 1 1 0; min-height: 0; }
-        .lside { flex: 0 1 auto; max-height: 44%; min-height: 0; border-left: 0; border-top: var(--rule) solid var(--ink); }
+        .lside { flex: 0 0 44%; min-height: 0; border-left: 0; border-top: var(--rule) solid var(--ink); }
       }
 
       /* gallery */
@@ -467,7 +509,12 @@ export default function render(shadow, ctx) {
       .grid.n1 { grid-template-columns: 1fr; } .grid.n2 { grid-template-columns: repeat(2, 1fr); }
       .grid.n3 { grid-template-columns: repeat(3, 1fr); } .grid.n4 { grid-template-columns: repeat(4, 1fr); }
       .grid.n5, .grid.n6 { grid-template-columns: repeat(3, 1fr); }
-      @container (max-aspect-ratio: 1) { .grid { grid-template-columns: repeat(2, 1fr) !important; } }
+      .grid.n7, .grid.n8 { grid-template-columns: repeat(4, 1fr); }
+      .grid.n9, .grid.n10, .grid.n11, .grid.n12 { grid-template-columns: repeat(4, 1fr); }
+      @container (max-aspect-ratio: 1) {
+        .grid { grid-template-columns: repeat(2, 1fr) !important; }
+        .grid.n7, .grid.n8, .grid.n9, .grid.n10, .grid.n11, .grid.n12 { grid-template-columns: repeat(3, 1fr) !important; }
+      }
       .tile { position: relative; border: calc(var(--rule) * .7) solid var(--ink); display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: #f6efdc; }
       .tpic { flex: 1; min-height: 0; overflow: hidden; }
       .tpic img { object-fit: cover; }
@@ -480,7 +527,8 @@ export default function render(shadow, ctx) {
 
       /* chart */
       .chart { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 1.6cqmin 2.6cqmin 1cqmin; gap: .8cqmin; }
-      .crow { flex: 1 1 0; min-height: 0; max-height: 8cqmin; display: flex; align-items: center; gap: 2cqmin; }
+      .crows { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; overflow: hidden; gap: .8cqmin; }
+      .crow { flex: 1 1 0; width: 100%; min-height: 4.4cqmin; max-height: 8cqmin; display: flex; align-items: center; gap: 2cqmin; }
       .crow .cn { width: 30%; font-weight: 800; font-size: 3cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .cells { flex: 1; display: flex; gap: .35cqmin; height: 72%; }
       .cells i { flex: 1; background: var(--muted); }
@@ -654,9 +702,9 @@ export default function render(shadow, ctx) {
         .cap-museum .bp { right: 0; bottom: 38%; }
         .mu { top: 81%; transform: translateY(-50%); left: 5cqmin; right: 5cqmin; width: auto; }
         .cap-figure .bp { right: 0; bottom: 46%; }
-        .fg { left: 5cqmin; right: 5cqmin; top: 55%; bottom: 3.4cqmin; display: grid; grid-template-columns: 46% 1fr; grid-template-rows: auto 1fr; column-gap: 4cqmin; row-gap: 1.6cqmin; align-content: stretch; }
+        .fg { left: 5cqmin; right: 5cqmin; top: 55%; bottom: 3.4cqmin; display: grid; grid-template-columns: 46% 1fr; grid-template-rows: auto minmax(0, 1fr); column-gap: 4cqmin; row-gap: 1.6cqmin; align-content: stretch; }
         .fg-t { grid-column: 1 / -1; }
-        .fg-dial { max-height: none; height: 100%; flex: none; }
+        .fg-dial { max-height: none; height: 100%; min-height: 0; width: 100%; flex: none; }
         .fg-c { align-self: center; border-top: 0; border-left: 1px solid currentColor; padding: 0 0 0 2.6cqmin; font-size: 3.2cqmin; }
         .cap-cyanotype .bp { bottom: 21cqmin; top: 5cqmin; }
         .cy { height: 15cqmin; bottom: 5cqmin; }
@@ -697,7 +745,8 @@ export default function render(shadow, ctx) {
       .cl-tile { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
       .cl-tile.fit { padding: 1cqmin; }
       .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: 'IM Fell English', Georgia, serif; font-size: 3.4cqmin; line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
-      .cl-key { flex: 0 0 34%; min-width: 0; display: flex; flex-direction: column; justify-content: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cl-key { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cl-key ol.fitrows { flex: 0 1 auto; max-height: 100%; }
       .cl-k { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.6cqmin; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .cl-t { font-family: 'IM Fell English SC', Georgia, serif; font-size: 6cqmin; letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
       .cl ol { list-style: none; margin: 2cqmin 0 0; padding: 0; }
@@ -722,6 +771,90 @@ export default function render(shadow, ctx) {
       .lv-gray16 .cl-t, .lv-gray4 .cl-t, .lv-mono .cl-t { box-shadow: 0 2px 0 #fff, 0 3px 0 #000; }
       .lv-gray16 .cl-mont figure, .lv-gray4 .cl-mont figure, .lv-mono .cl-mont figure { background: #fff; box-shadow: 0 0 0 1px #000; }
       .lv-mono .cl-key { -webkit-text-stroke: .35px currentColor; }
+
+      /* stamp: the bird on a postage stamp, the garden as its country and
+         the day's calls as its value; the perforations are bites of the
+         ground colour along the stamp's edges */
+      .bl.cap-stamp { background: #d9cdb0 !important; color: #2a2116; }
+      .st-card { position: absolute; inset: 5cqmin; background: #fbf7ec; }
+      .st-card::before, .st-card::after { content: ''; position: absolute; }
+      .st-card::before { left: 0; right: 0; top: -1.1cqmin; bottom: -1.1cqmin;
+        background: radial-gradient(circle, #d9cdb0 0.85cqmin, transparent 0.95cqmin) 0 0 / 2.6cqmin 2.2cqmin repeat-x,
+                    radial-gradient(circle, #d9cdb0 0.85cqmin, transparent 0.95cqmin) 0 100% / 2.6cqmin 2.2cqmin repeat-x; }
+      .st-card::after { top: 0; bottom: 0; left: -1.1cqmin; right: -1.1cqmin;
+        background: radial-gradient(circle, #d9cdb0 0.85cqmin, transparent 0.95cqmin) 0 0 / 2.2cqmin 2.6cqmin repeat-y,
+                    radial-gradient(circle, #d9cdb0 0.85cqmin, transparent 0.95cqmin) 100% 0 / 2.2cqmin 2.6cqmin repeat-y; }
+      .st-face { position: absolute; inset: 8cqmin; border: max(2px, .4cqmin) solid #2a2116; }
+      .cap-stamp .bp { top: 16cqmin; left: 11cqmin; right: 11cqmin; bottom: 23cqmin; z-index: 1; }
+      .st-top, .st-val, .st-bot { z-index: 2; }
+      .cap-stamp .bp.fit { padding: 0; }
+      .st-top { position: absolute; top: 9.6cqmin; left: 10cqmin; right: 22cqmin; font-family: 'IM Fell English SC', Georgia, serif; font-size: 4cqmin; letter-spacing: .2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .st-val { position: absolute; top: 9cqmin; right: 10cqmin; text-align: right; font-family: 'IM Fell English', Georgia, serif; line-height: .9; }
+      .st-val b { display: block; font-weight: 400; font-size: 7cqmin; }
+      .st-val span { font-style: italic; font-size: 2.4cqmin; }
+      .st-bot { position: absolute; left: 10cqmin; right: 10cqmin; bottom: 9.6cqmin; height: 12cqmin; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: 'IM Fell English', Georgia, serif; border-top: 1px solid #2a2116; }
+      .st-n { font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .06em; white-space: nowrap; line-height: 1.05; }
+      .st-s { font-style: italic; font-size: 3cqmin; }
+
+      /* woodblock: a kacho-e print, the title in a tall cartouche down the
+         right edge and the artist's seal in red */
+      .cap-woodblock { color: #22201b; }
+      .cap-woodblock .bp { right: 16cqmin; }
+      .wb-col { position: absolute; top: 5cqmin; right: 4cqmin; bottom: 5cqmin; width: 9cqmin; display: flex; flex-direction: column; align-items: center; gap: 2cqmin; }
+      .wb-title, .wb-sub { writing-mode: vertical-rl; background: #f6efdc; border: 1px solid currentColor; box-shadow: inset 0 0 0 .6cqmin #f6efdc, inset 0 0 0 calc(.6cqmin + 1px) currentColor; padding: 2.4cqmin 1.6cqmin; font-family: 'IM Fell English SC', Georgia, serif; max-height: 64%; overflow: hidden; }
+      .wb-title { font-size: 5cqmin; letter-spacing: .12em; white-space: nowrap; }
+      .wb-sub { font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: 3cqmin; max-height: 30%; white-space: nowrap; }
+      .wb-note { position: absolute; left: 3.6cqmin; top: 5cqmin; writing-mode: vertical-rl; font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: 2.6cqmin; opacity: .8; }
+      .wb-seal { position: absolute; left: 3cqmin; bottom: 5cqmin; width: 7.4cqmin; height: 7.4cqmin; display: flex; align-items: center; justify-content: center; background: #b5302a; color: #f6efdc; font-family: 'IM Fell English SC', Georgia, serif; font-size: 4cqmin; letter-spacing: .02em; box-shadow: inset 0 0 0 .5cqmin #b5302a, inset 0 0 0 .7cqmin #f6efdc; }
+
+      /* cameo: the bird in an oval window cut into a dark mat, as on a
+         Victorian cabinet card */
+      .bl.cap-cameo { background: #2e3a32 !important; color: #eadfbf; }
+      .cap-cameo .bp { top: 5%; bottom: 21%; left: 20%; right: 20%; border-radius: 50%; overflow: hidden; }
+      .cap-cameo .bp.fit { padding: 7%; }
+      .cm-ring { position: absolute; top: 5%; bottom: 21%; left: 20%; right: 20%; border-radius: 50%; pointer-events: none;
+        box-shadow: 0 0 0 .5cqmin #c9b07a, 0 0 0 1.5cqmin #2e3a32, 0 0 0 1.7cqmin #c9b07a; }
+      .cm-cap { position: absolute; left: 5cqmin; right: 5cqmin; bottom: 3%; height: 14%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cm-n { font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .1em; white-space: nowrap; line-height: 1.05; }
+      .cm-s { font-style: italic; font-size: 3cqmin; margin-top: .6cqmin; opacity: .85; }
+
+      /* nouveau: an arched frame with a title panel, after the posters of
+         the 1890s */
+      .bl.cap-nouveau { background: #e7dcc3 !important; color: #3d4a33; }
+      .cap-nouveau .bp { top: 6cqmin; left: 9cqmin; right: 9cqmin; bottom: 22cqmin; border-radius: 50% 50% 0 0 / 22% 22% 0 0; overflow: hidden; }
+      .cap-nouveau .bp.fit { padding: 6% 4% 2%; }
+      .nv-arch { position: absolute; top: 4cqmin; left: 7cqmin; right: 7cqmin; bottom: 20cqmin; border: max(2px, .6cqmin) solid currentColor; border-bottom: 0; border-radius: 50% 50% 0 0 / 22% 22% 0 0; pointer-events: none;
+        box-shadow: inset 0 0 0 1cqmin #e7dcc3, inset 0 0 0 calc(1cqmin + 1px) currentColor; }
+      .nv-band { position: absolute; left: 4cqmin; right: 4cqmin; bottom: 4cqmin; height: 16cqmin; background: currentColor; border-radius: 2cqmin; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .nv-n { font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-weight: 900; color: #efe5cc; white-space: nowrap; line-height: 1.05; }
+      .nv-s { font-family: 'Archivo Narrow', sans-serif; font-weight: 600; font-size: 2.6cqmin; letter-spacing: .2em; text-transform: uppercase; color: #efe5cc; margin-top: .6cqmin; }
+
+      @container (max-aspect-ratio: 1) {
+        .cap-cameo .bp, .cm-ring { left: 9%; right: 9%; top: 6%; bottom: 24%; }
+        .cm-cap { height: 16%; }
+        .cap-woodblock .bp { right: 15cqmin; }
+      }
+      .lv-gray16 .bl.cap-stamp, .lv-gray4 .bl.cap-stamp, .lv-mono .bl.cap-stamp { background: #fff !important; color: #000; }
+      .lv-gray16 .st-card, .lv-gray4 .st-card, .lv-mono .st-card { box-shadow: 0 0 0 1px #000; background: #fff; }
+      .lv-gray16 .st-card::before, .lv-gray4 .st-card::before, .lv-mono .st-card::before,
+      .lv-gray16 .st-card::after, .lv-gray4 .st-card::after, .lv-mono .st-card::after { display: none; }
+      .lv-gray16 .wb-seal, .lv-gray4 .wb-seal, .lv-mono .wb-seal { background: #000; color: #fff; box-shadow: inset 0 0 0 .5cqmin #000, inset 0 0 0 .7cqmin #fff; }
+      .lv-gray16 .wb-title, .lv-gray4 .wb-title, .lv-mono .wb-title, .lv-gray16 .wb-sub, .lv-gray4 .wb-sub, .lv-mono .wb-sub { background: #fff; box-shadow: inset 0 0 0 .6cqmin #fff, inset 0 0 0 calc(.6cqmin + 1px) #000; }
+      .lv-gray16 .bl.cap-cameo, .lv-gray4 .bl.cap-cameo, .lv-mono .bl.cap-cameo { background: #000 !important; color: #fff; }
+      .lv-gray16 .cm-ring, .lv-gray4 .cm-ring, .lv-mono .cm-ring { box-shadow: 0 0 0 .5cqmin #fff, 0 0 0 1.5cqmin #000, 0 0 0 1.7cqmin #fff; }
+      .lv-gray16 .bl.cap-nouveau, .lv-gray4 .bl.cap-nouveau, .lv-mono .bl.cap-nouveau { background: #fff !important; color: #000; }
+      .lv-gray16 .nv-arch, .lv-gray4 .nv-arch, .lv-mono .nv-arch { box-shadow: inset 0 0 0 1cqmin #fff, inset 0 0 0 calc(1cqmin + 1px) #000; }
+      .lv-gray16 .nv-n, .lv-gray4 .nv-n, .lv-mono .nv-n, .lv-gray16 .nv-s, .lv-gray4 .nv-s, .lv-mono .nv-s { color: #fff; }
+      .lv-mono .st-bot, .lv-mono .st-top, .lv-mono .wb-col, .lv-mono .cm-cap { -webkit-text-stroke: .35px currentColor; }
+
+      /* specimen sheet: the whole cell is the page */
+      .sh { flex: 1; min-height: 0; display: flex; container-type: size; }
+      .sh-s { container-type: size; color: #2a2116; }
+      .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; line-height: 1; }
+      .sh-c { position: absolute; left: 0; right: 0; bottom: 1.6%; text-align: center; font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: calc(var(--lf) * 100cqh); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .lv-gray16 .sh, .lv-gray4 .sh, .lv-mono .sh { background: #fff !important; }
+      .lv-gray16 .sh-s, .lv-gray4 .sh-s, .lv-mono .sh-s { color: #000; }
+      .lv-mono .sh-l, .lv-mono .sh-c { -webkit-text-stroke: .35px currentColor; }
 
       /* chart labels */
       .cells i { position: relative; }

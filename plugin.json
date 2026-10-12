@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -82,7 +82,7 @@
       "type": "select",
       "label": "Caption style (full bleed)",
       "default": "band",
-      "help": "Only used by the full bleed layout. Folio, museum, figure and cyanotype are natural-history styles: a double-ruled plate numbered by which bird of the day it was, a museum collection label, a 24-hour dial of the bird's calls, and a white-on-blue photogram. The serif and handwritten styles have fine strokes that suit colour and greyscale panels better than black and white ones.",
+      "help": "Only used by the full bleed layout. Folio, museum, figure and cyanotype are natural-history styles; stamp, woodblock, cameo and Art Nouveau frame the bird as a postage stamp, a Japanese print with a seal, an oval on a dark mat, and an arched poster. The serif and handwritten styles have fine strokes that suit colour and greyscale panels better than black and white ones.",
       "choices": [
         {
           "value": "band",
@@ -119,6 +119,22 @@
         {
           "value": "cyanotype",
           "label": "Cyanotype"
+        },
+        {
+          "value": "stamp",
+          "label": "Postage stamp"
+        },
+        {
+          "value": "woodblock",
+          "label": "Woodblock print"
+        },
+        {
+          "value": "cameo",
+          "label": "Cameo"
+        },
+        {
+          "value": "nouveau",
+          "label": "Art Nouveau"
         }
       ]
     },
@@ -202,11 +218,28 @@
       ]
     },
     {
+      "name": "cluster_style",
+      "type": "select",
+      "label": "Cluster style",
+      "default": "sheet",
+      "help": "Only used by the cluster layout with an AI option. Specimen sheet prints each bird's own painting on one page in an oval cluster, true to size and named, like a plate from a field guide; it costs nothing beyond the paintings. Blended scene repaints them together as one picture with one more AI pass.",
+      "choices": [
+        {
+          "value": "sheet",
+          "label": "Specimen sheet: each bird as painted, on one page"
+        },
+        {
+          "value": "blend",
+          "label": "Blended scene: one picture, repainted together"
+        }
+      ]
+    },
+    {
       "name": "cluster_size",
       "type": "select",
       "label": "Birds in the cluster",
-      "default": "4",
-      "help": "Only used by the cluster layout: how many of today's busiest birds it shows.",
+      "default": "8",
+      "help": "Only used by the cluster layout: how many of today's busiest birds it shows. A blended scene takes at most 6.",
       "choices": [
         {
           "value": "2",
@@ -227,6 +260,30 @@
         {
           "value": "6",
           "label": "6"
+        },
+        {
+          "value": "8",
+          "label": "8"
+        },
+        {
+          "value": "10",
+          "label": "10"
+        },
+        {
+          "value": "12",
+          "label": "12"
+        },
+        {
+          "value": "16",
+          "label": "16"
+        },
+        {
+          "value": "20",
+          "label": "20"
+        },
+        {
+          "value": "24",
+          "label": "24"
         }
       ]
     },

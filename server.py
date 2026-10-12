@@ -95,6 +95,10 @@ CAPTIONS = (
     "museum",
     "figure",
     "cyanotype",
+    "stamp",
+    "woodblock",
+    "cameo",
+    "nouveau",
 )
 PICTURES = ("plate_photo", "plate_gen", "gen", "photo", "none")
 # A photo shown among plates is toned to a warm monotone by default.
@@ -127,6 +131,10 @@ FONT_GROUPS = {
     "museum": ("im_fell", "im_fell_sc", "caveat"),
     "figure": ("im_fell", "im_fell_sc"),
     "cyanotype": ("im_fell", "im_fell_sc"),
+    "stamp": ("im_fell", "im_fell_sc"),
+    "woodblock": ("im_fell", "im_fell_sc"),
+    "cameo": ("im_fell", "im_fell_sc"),
+    "nouveau": ("playfair", "archivo_narrow"),
 }
 
 
@@ -737,10 +745,20 @@ GEN_BLEND = (
 GEN_ONE = (
     "Paint the bird in the reference photo, the {name} ({sci}), as {style}. Keep the "
     "plumage, markings, bill and proportions exactly as in the photo, perched on a simple "
-    "branch. No text, no lettering, no border, no signature."
+    "branch, the whole bird and its perch alone on plain, empty paper with a clear margin "
+    "all round. No other birds, no scenery, no text, no lettering, no border, no signature."
 )
-# Most birds the cluster layout shows on one sheet.
+# Most birds the blended cluster shows (the specimen sheet takes more).
 CLUSTER_MAX = 6
+# The cluster as a specimen sheet (each bird printed as painted) or blended
+# into one scene by a final AI pass.
+CLUSTER_STYLES = ("sheet", "blend")
+# Layout version of the specimen sheet, part of its cache tag.
+SHEET_LAYOUT = "sheet3"
+# Most birds a specimen sheet shows.
+SHEET_MAX = 24
+# Label type size as a fraction of the sheet's height.
+SHEET_LABEL = 0.017
 
 # Paintings being made right now, by key, so two renders never start the same
 # one. Paintings run in daemon threads that outlive the fetch that started
@@ -1258,6 +1276,63 @@ def _collage(
     }
 
 
+def _specimen_sheet(
+    species: list[dict[str, Any]],
+    n: int,
+    style: str,
+    ratio: float,
+    fal_key: str,
+    data_dir: Path,
+    levels: str,
+    label: float = SHEET_LABEL,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """The cluster as a specimen sheet: today's busiest birds, each painted
+    on its own (one new painting per refresh), cut out and printed on one
+    page. No blend: the birds stay as painted. None until a bird is painted."""
+    birds = [dict(b) for b in sorted(species, key=lambda s: -s["count"])[:n]]
+    notices: list[str] = []
+    if not fal_key:
+        notices.append(NOTE_NO_KEY)
+    started = False
+    for b in birds:
+        pic, did, note = _generated(
+            b,
+            SIZE["gallery"],
+            data_dir,
+            fal_key,
+            allow_new=not started,
+            levels=levels,
+            style=style,
+        )
+        started = started or did
+        b["painted"] = pic is not None
+        if note and note not in notices:
+            notices.append(note)
+    painted = [b for b in birds if b["painted"]]
+    if not painted:
+        return None, notices
+    keys = [_pkey(_slug(b["sci"] or b["name"]), style) for b in painted]
+    made = _sheet(painted, keys, ratio, SIZE["cluster"], data_dir, levels, label)
+    if not made:
+        return None, notices
+    counts = {b["name"]: b["count"] for b in birds}
+    label = GEN_STYLES[style][0].split(" (")[0].lower()
+    return {
+        "sheet": True,
+        "pic": {
+            "src": made["src"],
+            "kind": "sheet",
+            "paper": made["paper"],
+            "credit": f"AI paintings, {label} (fal.ai nano-banana), after iNaturalist photos",
+        },
+        "birds": [{**b, "count": counts.get(b["name"], 0)} for b in made["birds"]],
+        "ratio": made["ratio"],
+        "label": made["label"],
+        "waiting": [b["name"] for b in birds if not b["painted"]],
+        "montage": False,
+    }, notices
+
+
 def _cluster(
     species: list[dict[str, Any]],
     n: int,
@@ -1395,6 +1470,315 @@ def _cluster(
 
 
 # ----------------------------------------------------------------------
+# Specimen sheet
+# ----------------------------------------------------------------------
+
+
+def _lengths() -> dict[str, float]:
+    with contextlib.suppress(OSError, json.JSONDecodeError):
+        data = json.loads((HERE / "sizes.json").read_text(encoding="utf-8"))
+        return {k: float(v) for k, v in (data.get("length_cm") or {}).items()}
+    return {}
+
+
+def _size_factor(sci: str, lengths: dict[str, float]) -> float:
+    """How large a bird is drawn against a 20 cm bird: true to size, but
+    compressed so a wren stays readable beside a crow."""
+    cm = lengths.get(sci, 20.0)
+    return max(0.55, min(2.0, (cm / 20.0) ** 0.75))
+
+
+def _cutout_masked(raw: bytes) -> tuple[Any, Any, tuple[int, int, int]] | None:
+    """(the bird cropped from its painting with the paper turned white and
+    everything outside its outline whitened too, its mask, the paper
+    colour). Whitening outside a soft mask drops any wash or vignette the
+    painter left round the bird, so only the bird and its perch are printed
+    on the sheet."""
+    try:
+        from PIL import Image, ImageChops, ImageFilter, ImageStat
+    except ImportError:  # pragma: no cover
+        return None
+    try:
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception:  # noqa: BLE001
+        return None
+    im.thumbnail((1000, 1000))
+    w, h = im.size
+    b = max(2, min(w, h) // 40)
+    edge = Image.new("RGB", (w, b * 2))
+    edge.paste(im.crop((0, 0, w, b)), (0, 0))
+    edge.paste(im.crop((0, h - b, w, h)), (0, b))
+    paper = tuple(int(v) for v in ImageStat.Stat(edge).median)
+    diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert("L")
+    hard = diff.point(lambda v: 255 if v > 30 else 0)
+    # close small gaps, drop specks, then soften the edge
+    hard = hard.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(5))
+    box = hard.getbbox()
+    if not box:
+        return None
+    pad = max(w, h) // 60
+    box = (
+        max(0, box[0] - pad),
+        max(0, box[1] - pad),
+        min(w, box[2] + pad),
+        min(h, box[3] + pad),
+    )
+    lut = []
+    for c in paper:
+        lut += [min(255, round(i * 255 / max(1, c))) for i in range(256)]
+    crop = im.crop(box).point(lut)
+    mask = hard.crop(box).filter(ImageFilter.GaussianBlur(2))
+    white = Image.new("RGB", crop.size, (255, 255, 255))
+    return Image.composite(crop, white, mask), hard.crop(box), paper  # type: ignore[return-value]
+
+
+def _pack_sheet(
+    birds: list[dict[str, Any]], W: int, H: int, label: float = SHEET_LABEL
+) -> list[tuple[int, int, float]] | None:
+    """Place cut-outs on a W x H sheet: biggest first, each in the free spot
+    nearest the middle, inside an oval, a little apart, with room under
+    each for its name. Returns (x, y, scale) per bird, or None if numpy is
+    missing. Birds that do not fit at all get scale 0."""
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover - numpy ships with Tesserae
+        return None
+    from PIL import ImageFilter
+
+    cell = 6
+    gw, gh = W // cell, H // cell
+    ys, xs = np.mgrid[0:gh, 0:gw]
+    cx, cy, rx, ry = gw / 2, gh * 0.47, gw * 0.48, gh * 0.45
+    inside = ((xs + 0.5 - cx) / rx) ** 2 + ((ys + 0.5 - cy) / ry) ** 2 <= 1
+    label_rows = max(2, int(label * 1.5 * H / cell))
+    gap = 2
+
+    def footprint(b: dict[str, Any], scale: float) -> Any:
+        m = b["mask"]
+        tw, th = (
+            max(1, int(m.width * scale / cell)),
+            max(1, int(m.height * scale / cell)),
+        )
+        small = (
+            m.resize((tw, th)).filter(ImageFilter.MaxFilter(2 * gap + 1))
+            if min(tw, th) > 2
+            else m.resize((tw, th))
+        )
+        bird = np.asarray(small) > 40
+        # the name's strip under the bird, as wide as the bird or the name
+        name_w = int(len(b["name"]) * label * 0.74 * H / cell) + 3
+        fw = max(tw, name_w)
+        fp = np.zeros((th + label_rows + gap, fw), dtype=bool)
+        off = (fw - tw) // 2
+        fp[:th, off : off + tw] = bird
+        fp[
+            th + 1 : th + label_rows, (fw - name_w) // 2 : (fw - name_w) // 2 + name_w
+        ] = True
+        return fp, off
+
+    def attempt(unit: float) -> list[tuple[int, int, float]] | None:
+        occ = np.zeros((gh, gw), dtype=bool)
+        placed: list[tuple[int, int, float]] = []
+        for b in birds:
+            scale = unit * b["factor"]
+            fp, off = footprint(b, scale)
+            fh, fw = fp.shape
+            if fh >= gh or fw >= gw:
+                return None
+            # candidate top-left corners, nearest the oval's middle first
+            ty, tx = np.mgrid[0 : gh - fh : 2, 0 : gw - fw : 2]
+            d = ((tx + fw / 2 - cx) / rx) ** 2 + ((ty + fh / 2 - cy) / ry) ** 2
+            spot = None
+            for k in np.argsort(d, axis=None):
+                if d.flat[k] > 1.2:
+                    break
+                y, x = int(ty.flat[k]), int(tx.flat[k])
+                if (occ[y : y + fh, x : x + fw] & fp).any():
+                    continue
+                if not inside[y : y + fh, x : x + fw][fp].all():
+                    continue
+                spot = (y, x)
+                break
+            if spot is None:
+                return None
+            y, x = spot
+            occ[y : y + fh, x : x + fw] |= fp
+            placed.append(((x + off) * cell, y * cell, scale))
+        return placed
+
+    area = sum((b["mask"].width * b["mask"].height) * b["factor"] ** 2 for b in birds)
+    unit = ((0.5 * np.pi * (W * 0.48) * (H * 0.45)) / max(1, area)) ** 0.5
+    best = None
+    for _ in range(10):  # shrink until everything fits
+        best = attempt(unit)
+        if best:
+            break
+        unit *= 0.88
+    if not best:
+        return [(0, 0, 0.0)] * len(birds)
+    for _ in range(9):  # then grow while it still fits, to fill the page
+        bigger = attempt(unit * 1.07)
+        if not bigger:
+            break
+        unit, best = unit * 1.07, bigger
+    return best
+
+
+def _build_sheet(
+    rows: list[dict[str, Any]],
+    keys: list[str],
+    ratio: float,
+    size: int,
+    label: float,
+    folder: Path,
+    tag: str,
+) -> None:
+    """Make the specimen sheet under ``tag`` (slow: run it in a thread)."""
+    sheet_path, info_path = folder / f"sheet_{tag}.jpg", folder / f"sheet_{tag}.json"
+    try:
+        from PIL import Image, ImageChops
+    except ImportError:  # pragma: no cover
+        return
+    lengths = _lengths()
+    birds = []
+    for r, k in zip(rows, keys, strict=True):
+        with contextlib.suppress(OSError):
+            got = _cutout_masked((folder / f"{k}.jpg").read_bytes())
+            if got:
+                cut, mask, paper = got
+                birds.append(
+                    {
+                        "name": r["name"],
+                        "sci": r["sci"],
+                        "cut": cut,
+                        "mask": mask,
+                        "paper": paper,
+                        "factor": _size_factor(r["sci"], lengths),
+                    }
+                )
+    if not birds:
+        return
+    W, H = (size, int(size / ratio)) if ratio >= 1 else (int(size * ratio), size)
+    # biggest in the middle, as on a plate
+    birds.sort(key=lambda b: -(b["factor"] ** 2) * b["mask"].width * b["mask"].height)
+    spots = _pack_sheet(birds, W, H, label)
+    if spots is None:
+        return
+    avg = tuple(sum(b["paper"][i] for b in birds) // len(birds) for i in range(3))
+    sheet = Image.new("RGB", (W, H), avg)
+    shown = []
+    for b, (x, y, scale) in zip(birds, spots, strict=True):
+        if scale <= 0:
+            continue
+        cut = b["cut"]
+        fit = cut.resize(
+            (max(1, int(cut.width * scale)), max(1, int(cut.height * scale))),
+            Image.Resampling.LANCZOS,
+        )
+        region = sheet.crop((x, y, x + fit.width, y + fit.height))
+        sheet.paste(ImageChops.multiply(region, fit), (x, y))
+        shown.append(
+            {
+                "name": b["name"],
+                "sci": b["sci"],
+                "box": [
+                    round(x / W, 4),
+                    round(y / H, 4),
+                    round(fit.width / W, 4),
+                    round(fit.height / H, 4),
+                ],
+            }
+        )
+    out = io.BytesIO()
+    sheet.save(out, "JPEG", quality=88)
+    _write(sheet_path, out.getvalue())
+    info = {"birds": shown, "w": W, "h": H, "ratio": round(ratio, 3), "label": label}
+    _write(info_path, json.dumps(info).encode())
+    with contextlib.suppress(OSError):
+        for old in folder.glob("sheet_*"):
+            if (
+                not old.name.startswith(f"sheet_{tag}")
+                and time.time() - old.stat().st_mtime > 86400
+            ):
+                old.unlink()
+
+
+def _sheet(
+    rows: list[dict[str, Any]],
+    keys: list[str],
+    ratio: float,
+    size: int,
+    data_dir: Path,
+    levels: str,
+    label: float = SHEET_LABEL,
+) -> dict[str, Any] | None:
+    """Today's painted birds as a specimen sheet: each painting cut out and
+    printed on one page in an oval cluster, true to size against each
+    other, named underneath. {src, birds: [{name, box, label}], paper}.
+    Cached on the paintings it is made of."""
+    folder = _gen_dir(data_dir)
+    stamps = []
+    for k in keys:
+        with contextlib.suppress(OSError):
+            stamps.append(f"{k}:{int((folder / f'{k}.jpg').stat().st_mtime)}")
+    if len(stamps) != len(keys) or not keys:
+        return None
+    names = "|".join(r["name"] for r in rows)
+    tag = hashlib.sha1(
+        f"{'|'.join(stamps)}|{ratio:.3f}|{size}|{names}|{label:.4f}|{SHEET_LAYOUT}".encode()
+    ).hexdigest()[:16]
+    sheet_path, info_path = folder / f"sheet_{tag}.jpg", folder / f"sheet_{tag}.json"
+    info = _read_json(info_path, None)
+    if not (sheet_path.exists() and isinstance(info, dict)):
+        # cutting out and packing takes a few seconds, longer than Tesserae
+        # gives a fetch on a small computer, so it is done in the background
+        # and the newest earlier sheet of the same shape shows meanwhile
+        job = f"sheet_{tag}"
+        with _PAINTING_LOCK:
+            fresh = job not in _PAINTING
+            _PAINTING.add(job)
+        if fresh:
+
+            def run() -> None:
+                try:
+                    _build_sheet(rows, keys, ratio, size, label, folder, tag)
+                finally:
+                    with _PAINTING_LOCK:
+                        _PAINTING.discard(job)
+
+            threading.Thread(target=run, name=f"birds-{job}", daemon=True).start()
+        older = []
+        with contextlib.suppress(OSError):
+            for f in folder.glob("sheet_*.json"):
+                old = _read_json(f, None)
+                if (
+                    isinstance(old, dict)
+                    and abs(float(old.get("ratio") or 0) - round(ratio, 3)) < 0.01
+                    and abs(float(old.get("label") or 0) - label) < 1e-4
+                    and f.with_suffix(".jpg").exists()
+                ):
+                    older.append((f.stat().st_mtime, f, old))
+        if not older:
+            return None
+        _mt, f, info = max(older, key=lambda o: o[0])
+        sheet_path, tag = f.with_suffix(".jpg"), f.stem.removeprefix("sheet_")
+    try:
+        raw = sheet_path.read_bytes()
+    except OSError:
+        return None
+    src = _render(raw, size, None, folder / f"sheet_{tag}_{size}.jpg", levels)
+    if not src:
+        return None
+    return {
+        "src": src,
+        "birds": info["birds"],
+        "ratio": info["w"] / info["h"],
+        "paper": _paper(src, folder / f"sheet_{tag}.paper", levels),
+        "label": label,
+    }
+
+
+# ----------------------------------------------------------------------
 # Fonts
 # ----------------------------------------------------------------------
 
@@ -1440,7 +1824,13 @@ def fetch(
     pictures = _choice(options.get("pictures"), PICTURES)
     photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
     art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
-    cluster_n = _int(options.get("cluster_size"), 4, 2, CLUSTER_MAX)
+    cluster_style = _choice(options.get("cluster_style"), CLUSTER_STYLES)
+    cluster_n = _int(
+        options.get("cluster_size"),
+        12 if cluster_style == "sheet" else 4,
+        2,
+        SHEET_MAX if cluster_style == "sheet" else CLUSTER_MAX,
+    )
     cluster_every = _int(options.get("cluster_every"), 3, 1, 24)
     # the cluster's sheet is laid out in the cell's own orientation
     cw, ch = int(ctx.get("cell_w") or 0), int(ctx.get("cell_h") or 0)
@@ -1521,19 +1911,35 @@ def fetch(
             art_style,
         )
     elif layout == "cluster" and species:
-        cluster, notices = _cluster(
-            species,
-            cluster_n,
-            cluster_every,
-            pictures,
-            art_style,
-            aspect,
-            base,
-            token,
-            fal_key,
-            data_dir,
-            levels,
-        )
+        if cluster_style == "sheet" and pictures in ("plate_gen", "gen"):
+            ratio = cw / ch if cw and ch else 4 / 3
+            # names at least about 13 px tall on the panel itself
+            label_size = max(SHEET_LABEL, 13 / ch) if ch else SHEET_LABEL
+            cluster, notices = _specimen_sheet(
+                species,
+                cluster_n,
+                art_style,
+                ratio,
+                fal_key,
+                data_dir,
+                levels,
+                label_size,
+            )
+        if cluster is None:
+            cluster, more = _cluster(
+                species,
+                min(cluster_n, CLUSTER_MAX),
+                cluster_every,
+                pictures if cluster_style == "blend" else "plate_photo",
+                art_style,
+                aspect,
+                base,
+                token,
+                fal_key,
+                data_dir,
+                levels,
+            )
+            notices += [m for m in more if m not in notices]
 
     hourly_total = [0] * 24
     for s in species:

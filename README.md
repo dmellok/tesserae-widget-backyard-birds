@@ -28,10 +28,12 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 | Gallery | A card per bird, with a "new today" flag |
 | Day chart | Who called in which hour, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
-| Cluster | Today's busiest birds together in one seamless AI picture, or a numbered montage of their own plates and photos, with a key |
-| Full bleed | The latest bird's picture fills the cell, with one of nine caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype |
+| Cluster | Today's busiest birds on one page: a specimen sheet of their AI paintings, a blended AI scene, or a numbered montage of their plates and photos |
+| Full bleed | The latest bird's picture fills the cell, with one of thirteen caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype, postage stamp, woodblock print, cameo, Art Nouveau |
 
 The last four full-bleed styles are natural-history pieces. **Folio plate** is a double-ruled page from a Victorian folio, numbered by which bird of the day this was, with an engraved caption. **Museum label** sets the plate beside a collection card in printed field names and handwritten entries. **Scientific figure** draws the bird's calls per hour round a 24-hour dial with a figure caption. **Cyanotype** prints the picture as its own negative, white on Prussian blue, under the Latin name.
+
+Four more frame the bird as an object. **Postage stamp** puts it on a perforated stamp, with the garden as its country and the day's calls as its value. **Woodblock print** gives it a tall title cartouche and a red seal, as on a Japanese kacho-e print. **Cameo** shows it in an oval window on a dark mat, like a Victorian cabinet card. **Art Nouveau** sets it under an arched frame with a title panel.
 
 Every layout adapts to portrait cells. At full bleed, a plate is never cropped: it is fitted whole into the space the caption leaves, and the rest of the cell is filled with the plate's own paper colour.
 
@@ -61,13 +63,13 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 
 ### The cluster layout
 
-The cluster shows the day's busiest birds (two to six, set by **Birds in the cluster**) together in one picture. With an AI picture option on:
+The cluster shows the day's busiest birds on one page, in one of two **Cluster styles**. Both need an AI picture option; until a bird is painted, and with AI painting off, the cluster is a numbered montage of the birds' own plates and photos.
 
-1. Each bird gets its own AI painting, one new one per refresh, the same paintings the other layouts use.
-2. Once all of them are painted, they are cut out and arranged on one sheet in an oval cluster, the busiest bird large in the middle and the rest around it. This collage is shown while step 3 runs.
-3. One more fal.ai pass repaints the collage as a single seamless scene: one branch, one background, one light, each bird kept as painted. That blended picture is kept.
+**Specimen sheet** (the default) is a page from a field guide: each bird's own AI painting is cut out and printed on one sheet, packed into an oval with the biggest bird in the middle, roughly true to size against each other (from a bundled table of body lengths for common garden birds), each named underneath. It shows up to 24 birds (**Birds in the cluster**), costs nothing beyond the birds' own paintings, and fills in as they are painted, one per refresh. Building a sheet takes a few seconds, so it happens in the background and the previous sheet shows meanwhile.
 
-When the busiest birds change, the new bird is painted and the picture is blended again, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default). Each blend costs about US$0.04 and counts toward the daily limit. With AI painting off, or before any bird is painted, the cluster is a numbered montage of the birds' own plates and photos. Either way a key lists the birds with today's counts.
+**Blended scene** shows up to six birds as one picture: once all of them are painted they are arranged in an oval and one more fal.ai pass repaints them together, with one branch, one background and one light. The blend is kept and made again when the busiest birds change, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default), at about US$0.04 a blend.
+
+AI paintings are asked for as a single bird and its perch alone on plain paper, so they cut out cleanly for both.
 
 ### Managing the paintings
 

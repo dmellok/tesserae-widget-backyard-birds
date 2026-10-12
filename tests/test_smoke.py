@@ -553,7 +553,13 @@ def test_cluster_montage_without_ai(tmp_path, offline):
 
 
 def test_cluster_paints_each_bird_then_blends_them(tmp_path, offline):
-    opts = {**MELBOURNE, "layout": "cluster", "pictures": "gen", "cluster_size": 3}
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "cluster_style": "blend",
+        "pictures": "gen",
+        "cluster_size": 3,
+    }
     ctx = {"data_dir": str(tmp_path), "cell_w": 480, "cell_h": 800}
     kinds = []
     with _at(8):
@@ -581,6 +587,7 @@ def test_cluster_reblends_only_after_the_interval(tmp_path, offline):
         "layout": "cluster",
         "pictures": "gen",
         "cluster_size": 2,
+        "cluster_style": "blend",
         "cluster_every": 3,
     }
     ctx = {"data_dir": str(tmp_path)}
@@ -630,3 +637,38 @@ def test_collage_is_an_oval_cluster(n, portrait):
     # ring birds sit roughly on one ellipse round the centre
     radii = [((x - 0.5) / 0.33) ** 2 + ((y - 0.5) / 0.31) ** 2 for x, y in ring]
     assert max(radii) - min(radii) < 0.6, radii
+
+
+def test_specimen_sheet_prints_each_painted_bird(tmp_path, offline):
+    opts = {**MELBOURNE, "layout": "cluster", "pictures": "gen", "cluster_size": 4}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    with _at(8):
+        # four refreshes paint the four birds; the fifth builds the sheet in
+        # the background (showing the three-bird one), the sixth shows it
+        for _ in range(5):
+            server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+        t0 = time.time()
+        r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+        assert time.time() - t0 < 2, "a cached sheet is quick to serve"
+    c = r["cluster"]
+    assert c["sheet"] and c["pic"]["kind"] == "sheet" and not c["waiting"]
+    assert len(c["birds"]) == 4 and abs(c["ratio"] - 800 / 480) < 0.02
+    # four paintings, no blend: the sheet costs nothing more
+    assert len(offline.bodies) == 4
+    boxes = [b["box"] for b in c["birds"]]
+    for i, (x, y, w, h) in enumerate(boxes):
+        assert 0 <= x and 0 <= y and x + w <= 1 and y + h <= 1
+        for x2, y2, w2, h2 in boxes[i + 1 :]:
+            assert x + w <= x2 or x2 + w2 <= x or y + h <= y2 or y2 + h2 <= y, (
+                "birds overlap"
+            )
+    assert c["label"] >= 13 / 480 - 1e-9, "names at least 13 px on the panel"
+
+
+def test_specimen_sheet_sizes_birds_by_length():
+    lengths = server._lengths()
+    assert server._size_factor("Corvus corone", lengths) > server._size_factor(
+        "Troglodytes troglodytes", lengths
+    )
+    assert server._size_factor("Unknown bird", lengths) == 1.0
