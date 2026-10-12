@@ -28,6 +28,7 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 | Gallery | A card per bird, with a "new today" flag |
 | Day chart | Who called in which hour, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
+| Cluster | Today's busiest birds together in one seamless AI picture, or a numbered montage of their own plates and photos, with a key |
 | Full bleed | The latest bird's picture fills the cell, with one of nine caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype |
 
 The last four full-bleed styles are natural-history pieces. **Folio plate** is a double-ruled page from a Victorian folio, numbered by which bird of the day this was, with an engraved caption. **Museum label** sets the plate beside a collection card in printed field names and handwritten entries. **Scientific figure** draws the bird's calls per hour round a 24-hour dial with a figure caption. **Cyanotype** prints the picture as its own negative, white on Prussian blue, under the Latin name.
@@ -56,6 +57,18 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 - **Photos** fill the gaps: BirdNET-Go's own species thumbnail, or in demo mode an openly licensed iNaturalist photo. Shown among plates, a photo is toned to a warm monotone so the set still matches; set **Photo colour** to natural colour to leave photos as they are.
 - **AI paintings (experimental)** repaint an openly licensed reference photo in the plate style through [fal.ai](https://fal.ai). Each bird is painted once and kept, at most one new painting per refresh and twelve a day, at about US$0.04 a bird. A painting takes longer than Tesserae gives a widget to fetch its data, so it is made in the background: the bird shows a photo with a "Painting the …" note, and the painting appears on a later refresh. If fal.ai refuses (a wrong key, an empty balance), the reason is printed on the panel and that bird is not tried again for six hours. Paintings are credited as AI paintings on the panel. Add a fal.ai key in the widget's settings to use them.
 
+**Art style** picks how AI paintings are made: hand-coloured lithograph after Gould (the default), watercolour after Audubon, Japanese woodblock print, black-ink engraving, linocut or field sketch. Each style keeps its own painting of a bird, so switching back and forth costs nothing after the first time. The engraving and linocut suit black-and-white panels best.
+
+### The cluster layout
+
+The cluster shows the day's busiest birds (two to six, set by **Birds in the cluster**) together in one picture. With an AI picture option on:
+
+1. Each bird gets its own AI painting, one new one per refresh, the same paintings the other layouts use.
+2. Once all of them are painted, they are cut out and arranged on one sheet. This collage is shown while step 3 runs.
+3. One more fal.ai pass repaints the collage as a single seamless scene: one branch, one background, one light, each bird kept as painted. That blended picture is kept.
+
+When the busiest birds change, the new bird is painted and the picture is blended again, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default). Each blend costs about US$0.04 and counts toward the daily limit. With AI painting off, or before any bird is painted, the cluster is a numbered montage of the birds' own plates and photos. Either way a key lists the birds with today's counts.
+
 ### Managing the paintings
 
 The widget has its own page under **Widgets → Backyard Birds** (`/plugins/backyard_birds/`) listing every painting it has made. From there you can:
@@ -63,7 +76,8 @@ The widget has its own page under **Widgets → Backyard Birds** (`/plugins/back
 - **Repaint** a bird. The current painting is kept as an earlier version, and any earlier version can be brought back or deleted.
 - **Delete** a painting. With an AI picture option on, the bird is painted again the next time it is shown.
 - **Use instead of the classic plate**, so a painting you like wins over the bird's plate, even with the plain "Classic plates, photos" option.
-- **Paint a bird** now, by scientific name, to compare a painting with its plate before choosing.
+- **Paint a bird** now, by scientific name and in any art style, to compare a painting with its plate before choosing.
+- See the cluster's blended pictures, one per art style, and delete one to have the widget blend the current birds again.
 - See today's count against the daily limit, and why a painting failed, with a button to let the widget try again.
 
 A kept painting is also used for a bird without a plate whenever classic plates are on, so turning the AI option off does not throw the paintings away.

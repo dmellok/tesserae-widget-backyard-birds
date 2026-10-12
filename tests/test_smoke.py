@@ -53,18 +53,32 @@ def _settle(timeout: float = 10.0) -> None:
 
 
 def _jpeg(w: int = 300, h: int = 400) -> bytes:
+    """A bird-ish blot on cream paper, like a plate or a painting."""
+    from PIL import ImageDraw
+
+    im = Image.new("RGB", (w, h), (243, 234, 214))
+    ImageDraw.Draw(im).ellipse(
+        (w * 0.3, h * 0.25, w * 0.7, h * 0.7), fill=(200, 120, 40)
+    )
     buf = io.BytesIO()
-    Image.new("RGB", (w, h), (200, 120, 40)).save(buf, "JPEG")
+    im.save(buf, "JPEG")
     return buf.getvalue()
 
 
 @pytest.fixture
 def offline():
     """No network: plates, photos and fal all answer from here."""
-    calls: list[str] = []
+
+    class Calls(list):
+        bodies: list[bytes]
+
+    calls = Calls()
+    calls.bodies = []
 
     def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
         calls.append(url)
+        if "fal.run" in url and kw.get("body"):
+            calls.bodies.append(kw["body"])
         if "inaturalist.org/v1/taxa?" in url:
             return json.dumps({"results": [{"id": 7}]}).encode(), None
         if "inaturalist.org/v1/taxa/7" in url:
@@ -306,10 +320,16 @@ def test_generated_failure_is_shown_and_not_retried(tmp_path, offline):
 
 
 def test_repaint_keeps_the_old_painting(tmp_path, offline):
+    job = {
+        "key": "manorina_melanocephala",
+        "style": "gould",
+        "name": "Noisy Miner",
+        "sci": "Manorina melanocephala",
+    }
     with _at(8):
-        server._start_painting("Noisy Miner", "Manorina melanocephala", tmp_path, "k")
+        server._start_painting(job, tmp_path, "k")
         _settle()
-        server._start_painting("Noisy Miner", "Manorina melanocephala", tmp_path, "k")
+        server._start_painting(job, tmp_path, "k")
         _settle()
     g = server._gallery(tmp_path)
     (bird,) = g["birds"]
@@ -324,9 +344,13 @@ def test_painting_marked_on_admin_page_replaces_the_plate(tmp_path, offline):
         before = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
         L = before["latest"]
         assert L["pic"]["kind"] == "plate"
-        server._start_painting(L["name"], L["sci"], tmp_path, "k")
-        _settle()
         slug = server._slug(L["sci"])
+        server._start_painting(
+            {"key": slug, "style": "gould", "name": L["name"], "sci": L["sci"]},
+            tmp_path,
+            "k",
+        )
+        _settle()
         server._write(
             tmp_path / "gen" / "prefs.json",
             json.dumps({slug: {"prefer": True}}).encode(),
@@ -445,7 +469,10 @@ def test_pack_entries_are_well_formed():
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
 @pytest.mark.parametrize(
     ("layout", "caption"),
-    [(lay, "band") for lay in ("list", "latest", "gallery", "chart", "plate")]
+    [
+        (lay, "band")
+        for lay in ("list", "latest", "gallery", "chart", "plate", "cluster")
+    ]
     + [("chart", "mono-counts"), ("list", "gray4-peak")]
     + [("bleed", cap) for cap in server.CAPTIONS],
 )
@@ -480,3 +507,105 @@ def test_client_renders_every_layout(tmp_path, layout, caption):
     )
     assert out.returncode == 0, out.stderr
     assert "ok" in out.stdout
+
+
+def test_art_styles_keep_their_own_paintings(tmp_path, offline):
+    base = {**MELBOURNE, "layout": "bleed", "pictures": "gen"}
+    with _at(8):
+        for style in ("gould", "woodblock"):
+            server.fetch(
+                {**base, "art_style": style},
+                {"fal_api_key": "k"},
+                ctx={"data_dir": str(tmp_path)},
+            )
+            _settle()
+        a = server.fetch(
+            {**base, "art_style": "woodblock"},
+            {"fal_api_key": "k"},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert a["latest"]["pic"]["kind"] == "generated"
+    assert "woodblock" in a["latest"]["pic"]["credit"].lower()
+    sent = [json.loads(b) for b in offline.bodies]
+    assert "Ohara Koson" in sent[-1]["prompt"] and "Gould" in sent[0]["prompt"]
+    keys = {e["slug"] for e in server._gallery(tmp_path)["birds"]}
+    assert len(keys) == 2 and any(k.endswith("--woodblock") for k in keys)
+
+
+def test_cluster_montage_without_ai(tmp_path, offline):
+    with _at(8):
+        r = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "cluster",
+                "pictures": "plate_photo",
+                "cluster_size": 5,
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    c = r["cluster"]
+    assert c["montage"] and c["pic"] is None and len(c["birds"]) == 5
+    assert all(b["pic"] for b in c["birds"])
+    counts = [b["count"] for b in c["birds"]]
+    assert counts == sorted(counts, reverse=True), "the busiest birds"
+    assert not any("fal.run" in u for u in offline)
+
+
+def test_cluster_paints_each_bird_then_blends_them(tmp_path, offline):
+    opts = {**MELBOURNE, "layout": "cluster", "pictures": "gen", "cluster_size": 3}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 480, "cell_h": 800}
+    kinds = []
+    with _at(8):
+        for _ in range(5):
+            r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+            c = r["cluster"]
+            kinds.append("montage" if c["montage"] else c["pic"]["kind"])
+    # three birds painted one per refresh, then one blend of the three
+    assert kinds == ["montage", "collage", "collage", "collage", "generated"], kinds
+    assert len(offline.bodies) == 4
+    blend = json.loads(offline.bodies[-1])
+    assert blend["image_urls"][0].startswith("data:image/jpeg;base64,")
+    assert "collage of 3 birds" in blend["prompt"] and blend["aspect_ratio"] == "3:4"
+    assert [b["name"] for b in c["birds"]] == [b["name"] for b in r["cluster"]["birds"]]
+    assert len(c["birds"]) == 3 and "AI painting" in c["pic"]["credit"]
+    g = server._gallery(tmp_path)
+    assert sum(e["cluster"] for e in g["birds"]) == 1, "the blend is listed once"
+    assert not any(e["slug"].startswith("collage_") for e in g["birds"])
+
+
+def test_cluster_reblends_only_after_the_interval(tmp_path, offline):
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "pictures": "gen",
+        "cluster_size": 2,
+        "cluster_every": 3,
+    }
+    ctx = {"data_dir": str(tmp_path)}
+    with _at(8):
+        for _ in range(4):
+            server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+    assert len(offline.bodies) == 3, "two birds and one blend"
+    with _at(8):
+        for _ in range(3):  # a third bird joins: painted, but too soon to re-blend
+            r = server.fetch({**opts, "cluster_size": 3}, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+    assert len(offline.bodies) == 4
+    assert (
+        r["cluster"]["pic"]["kind"] == "generated" and len(r["cluster"]["birds"]) == 2
+    )
+    meta_path = tmp_path / "gen" / "cluster--gould.json"
+    meta = json.loads(meta_path.read_text())
+    meta["made"] -= 4 * 3600
+    meta_path.write_text(json.dumps(meta))
+    with _at(8):
+        server.fetch({**opts, "cluster_size": 3}, {"fal_api_key": "k"}, ctx=ctx)
+        _settle()
+        r = server.fetch({**opts, "cluster_size": 3}, {"fal_api_key": "k"}, ctx=ctx)
+    assert len(offline.bodies) == 5
+    assert len(r["cluster"]["birds"]) == 3
+    (blend,) = [e for e in server._gallery(tmp_path)["birds"] if e["cluster"]]
+    assert len(blend["archive"]) == 1, "the earlier blend is kept"

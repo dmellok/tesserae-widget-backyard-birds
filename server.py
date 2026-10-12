@@ -80,11 +80,11 @@ GEN_RETRY_S = 6 * 3600
 ERR_UNREACHABLE = "Couldn't reach BirdNET-Go at {url}."
 ERR_AUTH = "BirdNET-Go asked for a login. Add an API token in this cell's settings."
 NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
-NOTE_PAINTING = "Painting the {name} with fal.ai; it appears on a later refresh."
-NOTE_GEN_FAILED = "AI painting of the {name} failed: {why}"
+NOTE_PAINTING = "Painting {name} with fal.ai; it appears on a later refresh."
+NOTE_GEN_FAILED = "AI painting of {name} failed: {why}"
 NOTE_GEN_CAP = "AI paintings: today's limit of {cap} is used up."
 
-LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed")
+LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed", "cluster")
 CAPTIONS = (
     "band",
     "editorial",
@@ -106,7 +106,14 @@ CHART_LABELS = ("none", "counts", "peak")
 
 # Longest edge, in pixels, of a picture for each layout. Big enough for a
 # 13.3" panel at full bleed, small enough that a list stays a few hundred KB.
-SIZE = {"list": 160, "gallery": 520, "latest": 1100, "plate": 1100, "bleed": 1600}
+SIZE = {
+    "list": 160,
+    "gallery": 520,
+    "latest": 1100,
+    "plate": 1100,
+    "bleed": 1600,
+    "cluster": 1600,
+}
 
 # Fonts each caption style needs, inlined only when that style is on screen.
 FONT_GROUPS = {
@@ -116,6 +123,7 @@ FONT_GROUPS = {
     "poster": ("archivo_black", "archivo_narrow"),
     "engraved": ("im_fell", "im_fell_sc"),
     "folio": ("im_fell", "im_fell_sc"),
+    "cluster": ("im_fell", "im_fell_sc"),
     "museum": ("im_fell", "im_fell_sc", "caveat"),
     "figure": ("im_fell", "im_fell_sc"),
     "cyanotype": ("im_fell", "im_fell_sc"),
@@ -679,19 +687,76 @@ def _photo(
     )
 
 
-GEN_PROMPT = (
-    "Repaint this bird as a plate from a nineteenth-century natural history book: a "
-    "hand-coloured lithograph in the manner of John Gould, showing the {name} ({sci}) "
-    "perched on a simple branch. Keep the plumage, markings, bill and proportions exactly "
-    "as in the reference photo. Soft watercolour washes over fine engraved linework, plain "
-    "cream paper background, generous margins. No text, no lettering, no border, no signature."
+# Art styles for AI paintings: (label, how to paint it). Each style keeps its
+# own painting per bird, so switching a cell's style never repaints the old one.
+GEN_STYLES: dict[str, tuple[str, str]] = {
+    "gould": (
+        "Hand-coloured lithograph (Gould)",
+        "a plate from a nineteenth-century natural history book: a hand-coloured "
+        "lithograph in the manner of John Gould. Soft watercolour washes over fine "
+        "engraved linework, plain cream paper background, generous margins",
+    ),
+    "audubon": (
+        "Watercolour after Audubon",
+        "a life-size watercolour in the manner of John James Audubon's Birds of America: "
+        "a lively natural pose among a few leaves, watercolour and pastel with fine "
+        "detail in the feathers, plain cream paper background",
+    ),
+    "woodblock": (
+        "Japanese woodblock print",
+        "a Japanese kacho-e woodblock print in the manner of Ohara Koson: flat areas of "
+        "colour with a fine dark keyline, a soft graded background, a single flowering "
+        "branch, the texture of washi paper",
+    ),
+    "engraving": (
+        "Black-ink engraving",
+        "a black-ink copperplate engraving from a Victorian encyclopaedia of natural "
+        "history: fine cross-hatching and stippling, no colour at all, plain white paper",
+    ),
+    "linocut": (
+        "Linocut",
+        "a bold linocut print in black ink with one muted colour: strong carved lines, "
+        "simple shapes, a little texture from the block, plain off-white paper",
+    ),
+    "sketch": (
+        "Field sketch",
+        "a naturalist's field sketch in graphite with a light watercolour wash: loose "
+        "construction lines, a few annotations of shape only, on cream sketchbook paper",
+    ),
+}
+GEN_STYLE_IDS = tuple(GEN_STYLES)
+GEN_BLEND = (
+    "This picture is a collage of {n} birds, each painted on its own: {birds}. Repaint it "
+    "as one seamless picture, {style}, with all the birds together in a single natural "
+    "scene: one shared branch or group of branches, one continuous background, the same "
+    "light and paper throughout. Keep every bird's species, plumage, markings, pose and "
+    "size as painted, and keep each about where it is. No text, no labels, no numbers, no "
+    "border, no signature."
 )
+GEN_ONE = (
+    "Paint the bird in the reference photo, the {name} ({sci}), as {style}. Keep the "
+    "plumage, markings, bill and proportions exactly as in the photo, perched on a simple "
+    "branch. No text, no lettering, no border, no signature."
+)
+# Most birds the cluster layout shows on one sheet.
+CLUSTER_MAX = 6
 
-# Birds being painted right now, by slug, so two renders never start the same
+# Paintings being made right now, by key, so two renders never start the same
 # one. Paintings run in daemon threads that outlive the fetch that started
 # them: fal takes 15 to 60 seconds and Tesserae gives a fetch about six.
 _PAINTING: set[str] = set()
 _PAINTING_LOCK = threading.Lock()
+
+
+def _pkey(slug: str, style: str) -> str:
+    """File key for a bird's painting in a style. The Gould style keeps the
+    bare slug, so paintings made before styles existed are still found."""
+    return slug if style == "gould" else f"{slug}--{style}"
+
+
+def _blend_key(style: str) -> str:
+    """File key for the cluster's blended picture in a style."""
+    return f"cluster--{style}"
 
 
 def _gen_dir(data_dir: Path) -> Path:
@@ -720,16 +785,16 @@ def _spend_budget(folder: Path) -> None:
     )
 
 
-def _prefers_painting(data_dir: Path, slug: str) -> bool:
-    """True when the admin page marked this bird's painting to replace its plate."""
+def _prefers_painting(data_dir: Path, key: str) -> bool:
+    """True when the admin page marked this painting to replace the bird's plate."""
     prefs = _read_json(_gen_dir(data_dir) / "prefs.json", {})
-    return bool(isinstance(prefs, dict) and (prefs.get(slug) or {}).get("prefer"))
+    return bool(isinstance(prefs, dict) and (prefs.get(key) or {}).get("prefer"))
 
 
-def _drop_derived(folder: Path, slug: str) -> None:
-    """Remove the resized copies and paper colours made from a bird's active
-    painting, after it is replaced or deleted."""
-    pattern = re.compile(rf"{re.escape(slug)}(_\d+(_\w+)?\.jpg|(_\w+)?\.paper)")
+def _drop_derived(folder: Path, key: str) -> None:
+    """Remove the resized copies and paper colours made from a painting,
+    after it is replaced or deleted."""
+    pattern = re.compile(rf"{re.escape(key)}(_\d+(_\w+)?\.jpg|(_\w+)?\.paper)")
     with contextlib.suppress(OSError):
         for f in folder.iterdir():
             if pattern.fullmatch(f.name):
@@ -737,33 +802,62 @@ def _drop_derived(folder: Path, slug: str) -> None:
                     f.unlink()
 
 
-def _paint(name: str, sci: str, data_dir: Path, key: str) -> str | None:
-    """Make one painting and keep it as the bird's active one. Blocking: run
-    it through _start_painting. Returns None, or why it failed (also kept in
-    <slug>.err so renders and the admin page can say so)."""
+def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
+    """Make one bird's painting and keep it under job["key"]. Blocking: run it
+    through _start_painting. ``job`` is {key, style, name, sci}. Returns None,
+    or why it failed (also kept in <key>.err for renders and the admin page)."""
     folder = _gen_dir(data_dir)
-    slug = _slug(sci or name)
-    err_path = folder / f"{slug}.err"
+    key = job["key"]
+    err_path = folder / f"{key}.err"
+    label, how = GEN_STYLES.get(job.get("style") or "gould", GEN_STYLES["gould"])
 
     def fail(why: str) -> str:
-        _write(err_path, json.dumps({"why": why, "at": int(time.time())}).encode())
+        info = {k: job.get(k) for k in ("name", "sci", "style", "birds")}
+        _write(
+            err_path, json.dumps({"why": why, "at": int(time.time()), **info}).encode()
+        )
         return why
 
-    ref_url, ref_credit = _inat_ref(sci, data_dir) if sci else ("", "")
-    if not ref_url:
-        return fail("no openly licensed reference photo on iNaturalist")
+    if job.get("collage"):
+        # a blend: the collage of the birds' own paintings, repainted as one
+        try:
+            sheet = Path(job["collage"]).read_bytes()
+        except OSError:
+            return fail(
+                "the collage to blend has gone; it is made again on the next refresh"
+            )
+        image_url = "data:image/jpeg;base64," + base64.b64encode(sheet).decode()
+        birds = job.get("birds") or []
+        prompt = GEN_BLEND.format(
+            n=len(birds),
+            birds="; ".join(f"the {b['name']} ({b['sci']})" for b in birds),
+            style=how,
+        )
+        ref_credit = ""
+    else:
+        image_url, ref_credit = (
+            _inat_ref(job["sci"], data_dir) if job.get("sci") else ("", "")
+        )
+        if not image_url:
+            return fail("no openly licensed reference photo on iNaturalist")
+        prompt = GEN_ONE.format(name=job["name"], sci=job["sci"], style=how)
     _spend_budget(folder)
     body = json.dumps(
         {
-            "prompt": GEN_PROMPT.format(name=name, sci=sci),
-            "image_urls": [ref_url],
+            "prompt": prompt,
+            "image_urls": [image_url],
             "num_images": 1,
             "output_format": "jpeg",
-            "aspect_ratio": "3:4",
+            "aspect_ratio": job.get("aspect") or "3:4",
         }
     ).encode()
     answer, err = _json(
-        FAL_EDIT, key, auth_scheme="Key", body=body, timeout=GEN_TIMEOUT_S, detail=True
+        FAL_EDIT,
+        fal_key,
+        auth_scheme="Key",
+        body=body,
+        timeout=GEN_TIMEOUT_S,
+        detail=True,
     )
     if err:
         if err.startswith(("HTTP 401", "HTTP 403")):
@@ -776,128 +870,146 @@ def _paint(name: str, sci: str, data_dir: Path, key: str) -> str | None:
     )
     if not raw:
         return fail(f"fal.ai sent no picture ({err})")
-    credit = "AI painting (fal.ai nano-banana)" + (
-        f" after {ref_credit}" if ref_credit else ""
-    )
-    img = folder / f"{slug}.jpg"
+    credit = f"AI painting, {label.split(' (')[0].lower()} (fal.ai nano-banana)"
+    if job.get("collage"):
+        credit += ", blended from each bird's own AI painting after iNaturalist photos"
+    elif ref_credit:
+        credit += f" after {ref_credit}"
+    img = folder / f"{key}.jpg"
     if img.exists():  # a repaint: the old one is kept, not lost
-        _archive(folder, slug)
-    meta = {"credit": credit, "made": int(time.time()), "name": name, "sci": sci}
-    _write(folder / f"{slug}.json", json.dumps(meta).encode())
+        _archive(folder, key)
+    meta = {
+        "credit": credit,
+        "made": int(time.time()),
+        "style": job.get("style") or "gould",
+        "name": job.get("name", ""),
+        "sci": job.get("sci", ""),
+    }
+    if job.get("collage"):
+        meta["birds"] = job.get("birds") or []
+        meta["tag"] = job.get("tag", "")
+    _write(folder / f"{key}.json", json.dumps(meta).encode())
     _write(img, raw)
-    _drop_derived(folder, slug)
+    _drop_derived(folder, key)
     with contextlib.suppress(OSError):
         err_path.unlink()
     return None
 
 
-def _archive(folder: Path, slug: str) -> None:
-    """Move a bird's active painting (and its credit) into gen/archive/."""
+def _archive(folder: Path, key: str) -> None:
+    """Move a painting (and its credit) into gen/archive/."""
     arch = folder / "archive"
     arch.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     with contextlib.suppress(OSError):
-        os.replace(folder / f"{slug}.jpg", arch / f"{slug}__{stamp}.jpg")
+        os.replace(folder / f"{key}.jpg", arch / f"{key}__{stamp}.jpg")
     with contextlib.suppress(OSError):
-        os.replace(folder / f"{slug}.json", arch / f"{slug}__{stamp}.json")
-    _drop_derived(folder, slug)
+        os.replace(folder / f"{key}.json", arch / f"{key}__{stamp}.json")
+    _drop_derived(folder, key)
 
 
-def _start_painting(name: str, sci: str, data_dir: Path, key: str) -> bool:
+def _start_painting(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
     """Start a painting in the background. False if one is already running
-    for this bird. The thread carries the caller's context, so the widget's
+    under this key. The thread carries the caller's context, so the widget's
     network capability scope still applies to it."""
-    slug = _slug(sci or name)
+    key = job["key"]
     with _PAINTING_LOCK:
-        if slug in _PAINTING:
+        if key in _PAINTING:
             return False
-        _PAINTING.add(slug)
+        _PAINTING.add(key)
 
     def run() -> None:
         try:
-            _paint(name, sci, data_dir, key)
+            _paint(job, data_dir, fal_key)
         except Exception as err:  # noqa: BLE001 - a thread must not die loudly
             _write(
-                _gen_dir(data_dir) / f"{slug}.err",
+                _gen_dir(data_dir) / f"{key}.err",
                 json.dumps({"why": str(err)[:200], "at": int(time.time())}).encode(),
             )
         finally:
             with _PAINTING_LOCK:
-                _PAINTING.discard(slug)
+                _PAINTING.discard(key)
 
     ctx = contextvars.copy_context()
     threading.Thread(
-        target=ctx.run, args=(run,), name=f"birds-paint-{slug}", daemon=True
+        target=ctx.run, args=(run,), name=f"birds-paint-{key}", daemon=True
     ).start()
     return True
 
 
 def _painting(
-    row: dict[str, Any], size: int, data_dir: Path, levels: str = "colour"
+    key: str, size: int, data_dir: Path, levels: str = "colour"
 ) -> dict[str, Any] | None:
-    """The bird's kept painting, resized for the layout, or None."""
+    """A kept painting, resized for the layout, or None."""
     folder = _gen_dir(data_dir)
-    slug = _slug(row["sci"] or row["name"])
-    img = folder / f"{slug}.jpg"
+    img = folder / f"{key}.jpg"
     if not img.exists():
         return None
-    meta = _read_json(folder / f"{slug}.json", {})
-    credit = str(meta.get("credit") or "AI painting") if isinstance(meta, dict) else ""
+    meta = _read_json(folder / f"{key}.json", {})
+    meta = meta if isinstance(meta, dict) else {}
     try:
         raw = img.read_bytes()
     except OSError:
         return None
-    src = _render(raw, size, None, folder / f"{slug}_{size}.jpg", levels)
+    src = _render(raw, size, None, folder / f"{key}_{size}.jpg", levels)
     if not src:
         return None
     return {
         "src": src,
         "kind": "generated",
-        "credit": credit or "AI painting",
+        "credit": str(meta.get("credit") or "AI painting"),
         "focus": [0.5, 0.45],
-        "paper": _paper(src, folder / f"{slug}.paper", levels),
+        "paper": _paper(src, folder / f"{key}.paper", levels),
     }
+
+
+def _may_paint(
+    data_dir: Path, key: str, label: str, fal_key: str, allow_new: bool
+) -> tuple[bool, str | None]:
+    """(go ahead, notice) for starting a painting under ``key``: not while one
+    is running, not within GEN_RETRY_S of a failure, not past the daily cap."""
+    folder = _gen_dir(data_dir)
+    with _PAINTING_LOCK:
+        busy = key in _PAINTING
+    if busy:
+        return False, NOTE_PAINTING.format(name=label)
+    failed = _read_json(folder / f"{key}.err", None)
+    if (
+        isinstance(failed, dict)
+        and time.time() - float(failed.get("at") or 0) < GEN_RETRY_S
+    ):
+        return False, NOTE_GEN_FAILED.format(name=label, why=failed.get("why"))
+    if not (allow_new and fal_key):
+        return False, None
+    if _budget_used(folder) >= GEN_DAILY_CAP:
+        return False, NOTE_GEN_CAP.format(cap=GEN_DAILY_CAP)
+    return True, None
 
 
 def _generated(
     row: dict[str, Any],
     size: int,
     data_dir: Path,
-    key: str,
+    fal_key: str,
     allow_new: bool,
     levels: str = "colour",
+    style: str = "gould",
 ) -> tuple[dict[str, Any] | None, bool, str | None]:
     """(picture, started_one, notice). Reads a kept painting, or starts one in
     the background when allowed: one new painting per fetch at most, and
     GEN_DAILY_CAP a day, so a busy morning fills in over a few refreshes. A
     bird whose painting failed is left alone for GEN_RETRY_S and the failure
     is shown as a notice."""
-    pic = _painting(row, size, data_dir, levels)
+    key = _pkey(_slug(row["sci"] or row["name"]), style)
+    pic = _painting(key, size, data_dir, levels)
     if pic is not None:
         return pic, False, None
-    folder = _gen_dir(data_dir)
-    slug = _slug(row["sci"] or row["name"])
-    with _PAINTING_LOCK:
-        busy = slug in _PAINTING
-    if busy:
-        return None, False, NOTE_PAINTING.format(name=row["name"])
-    failed = _read_json(folder / f"{slug}.err", None)
-    if (
-        isinstance(failed, dict)
-        and time.time() - float(failed.get("at") or 0) < GEN_RETRY_S
-    ):
-        return (
-            None,
-            False,
-            NOTE_GEN_FAILED.format(name=row["name"], why=failed.get("why")),
-        )
-    if not (allow_new and key):
-        return None, False, None
-    if _budget_used(folder) >= GEN_DAILY_CAP:
-        return None, False, NOTE_GEN_CAP.format(cap=GEN_DAILY_CAP)
-    if _start_painting(row["name"], row["sci"], data_dir, key):
-        return None, True, NOTE_PAINTING.format(name=row["name"])
-    return None, False, NOTE_PAINTING.format(name=row["name"])
+    go, note = _may_paint(data_dir, key, f"the {row['name']}", fal_key, allow_new)
+    if not go:
+        return None, False, note
+    job = {"key": key, "style": style, "name": row["name"], "sci": row["sci"]}
+    started = _start_painting(job, data_dir, fal_key)
+    return None, started, NOTE_PAINTING.format(name=f"the {row['name']}")
 
 
 def _attach_pictures(
@@ -909,6 +1021,8 @@ def _attach_pictures(
     fal_key: str,
     data_dir: Path,
     levels: str = "colour",
+    style: str = "gould",
+    allow_new: bool = True,
 ) -> list[str]:
     """Give each row a ``pic`` per the pictures option. Returns notices."""
     notices: list[str] = []
@@ -919,10 +1033,13 @@ def _attach_pictures(
     if wants_gen and not fal_key:
         notices.append(NOTE_NO_KEY)
 
+    def key_of(row: dict[str, Any]) -> str:
+        return _pkey(_slug(row["sci"] or row["name"]), style)
+
     def plate_for(row: dict[str, Any]) -> dict[str, Any] | None:
         # a painting marked on the admin page to replace the plate wins
-        if _prefers_painting(data_dir, _slug(row["sci"] or row["name"])):
-            pic = _painting(row, size, data_dir, levels)
+        if _prefers_painting(data_dir, key_of(row)):
+            pic = _painting(key_of(row), size, data_dir, levels)
             if pic is not None:
                 return pic
         return _plate(row["sci"], pack, size, data_dir, levels)
@@ -931,19 +1048,25 @@ def _attach_pictures(
     # generated painting is at most one new one per fetch, in the background.
     with ThreadPoolExecutor(max_workers=6) as pool:
         plates = list(pool.map(plate_for, rows)) if pack else [None] * len(rows)
-    started = False
+    started = not allow_new
     for row, plate in zip(rows, plates, strict=True):
         pic = plate
         if pic is None and wants_gen:
             pic, did, note = _generated(
-                row, size, data_dir, fal_key, allow_new=not started, levels=levels
+                row,
+                size,
+                data_dir,
+                fal_key,
+                allow_new=not started,
+                levels=levels,
+                style=style,
             )
             started = started or did
             if note and note not in notices:
                 notices.append(note)
         elif pic is None and pack:
             # a painting kept from before still beats a photo among plates
-            pic = _painting(row, size, data_dir, levels)
+            pic = _painting(key_of(row), size, data_dir, levels)
         row["pic"] = pic
     missing = [r for r in rows if not r.get("pic")]
     with ThreadPoolExecutor(max_workers=6) as pool:
@@ -953,6 +1076,297 @@ def _attach_pictures(
     for row, pic in zip(missing, photos, strict=True):
         row["pic"] = pic
     return notices
+
+
+# Where each bird goes on a collage sheet, as (x, y, w, h) fractions of a
+# landscape sheet, busiest bird first; portrait sheets swap the axes.
+_COLLAGE_SLOTS: dict[int, list[tuple[float, float, float, float]]] = {
+    1: [(0, 0, 1, 1)],
+    2: [(0, 0, 0.5, 1), (0.5, 0, 0.5, 1)],
+    3: [(0, 0, 0.56, 1), (0.56, 0, 0.44, 0.5), (0.56, 0.5, 0.44, 0.5)],
+    4: [(0, 0, 0.5, 0.5), (0.5, 0, 0.5, 0.5), (0, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5)],
+    5: [
+        (0, 0, 0.4, 1),
+        (0.4, 0, 0.3, 0.5),
+        (0.7, 0, 0.3, 0.5),
+        (0.4, 0.5, 0.3, 0.5),
+        (0.7, 0.5, 0.3, 0.5),
+    ],
+    6: [(x / 3, y / 2, 1 / 3, 0.5) for y in range(2) for x in range(3)],
+}
+
+
+def _cutout(raw: bytes) -> tuple[Any, tuple[int, int, int]] | None:
+    """(the bird cropped from its painting with the paper turned white, the
+    paper colour). The painting is on plain paper, so anything far enough
+    from the paper's colour is the bird (and its perch); dividing by the
+    paper colour makes the paper white, so the cut-outs can be multiplied
+    onto one sheet and read as printed on it, with no edges to hide."""
+    try:
+        from PIL import Image, ImageChops, ImageFilter, ImageStat
+    except ImportError:  # pragma: no cover - Pillow ships with Tesserae
+        return None
+    try:
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+    except Exception:  # noqa: BLE001 - an undecodable painting is skipped
+        return None
+    im.thumbnail((1200, 1200))
+    w, h = im.size
+    b = max(2, min(w, h) // 40)
+    edge = Image.new("RGB", (w, b * 2 + h * 0))
+    edge.paste(im.crop((0, 0, w, b)), (0, 0))
+    edge.paste(im.crop((0, h - b, w, h)), (0, b))
+    paper = tuple(int(v) for v in ImageStat.Stat(edge).median)
+    diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert("L")
+    mask = diff.point(lambda v: 255 if v > 34 else 0).filter(ImageFilter.MaxFilter(9))
+    box = mask.getbbox()
+    if not box:
+        return None
+    pad = max(w, h) // 40
+    box = (
+        max(0, box[0] - pad),
+        max(0, box[1] - pad),
+        min(w, box[2] + pad),
+        min(h, box[3] + pad),
+    )
+    crop = im.crop(box)
+    # paper to white: each channel divided by the paper's own value
+    lut = []
+    for c in paper:
+        lut += [min(255, round(i * 255 / max(1, c))) for i in range(256)]
+    return crop.point(lut), paper  # type: ignore[return-value]
+
+
+def _collage(
+    keys: list[str], aspect: str, size: int, data_dir: Path, levels: str
+) -> dict[str, Any] | None:
+    """The paintings under ``keys`` cut out and arranged on one sheet, busiest
+    first: {src, boxes ([x, y, w, h] fractions), paper, tag, sheet (the
+    full-size colour file)}. Cached on the paintings it is made of, so it is
+    rebuilt only when one of them changes."""
+    folder = _gen_dir(data_dir)
+    stamps = []
+    for k in keys:
+        with contextlib.suppress(OSError):
+            stamps.append(f"{k}:{int((folder / f'{k}.jpg').stat().st_mtime)}")
+    if len(stamps) != len(keys) or not keys:
+        return None
+    tag = hashlib.sha1(f"{'|'.join(stamps)}|{aspect}|{size}".encode()).hexdigest()[:16]
+    sheet_path, info_path = (
+        folder / f"collage_{tag}.jpg",
+        folder / f"collage_{tag}.json",
+    )
+    info = _read_json(info_path, None)
+    if not (sheet_path.exists() and isinstance(info, dict)):
+        try:
+            from PIL import Image, ImageChops
+        except ImportError:  # pragma: no cover
+            return None
+        cuts = []
+        for k in keys:
+            with contextlib.suppress(OSError):
+                got = _cutout((folder / f"{k}.jpg").read_bytes())
+                if got:
+                    cuts.append(got)
+        if len(cuts) != len(keys):
+            return None
+        portrait = aspect == "3:4"
+        W, H = (size * 3 // 4, size) if portrait else (size, size * 3 // 4)
+        avg = [sum(p[i] for _c, p in cuts) // len(cuts) for i in range(3)]
+        sheet = Image.new("RGB", (W, H), tuple(avg))
+        slots = _COLLAGE_SLOTS[min(len(cuts), 6)]
+        boxes = []
+        for (cut, _p), (x, y, sw, sh) in zip(cuts, slots, strict=False):
+            if portrait:
+                x, y, sw, sh = y, x, sh, sw
+            # a little air round each bird; the busiest one a touch larger
+            m = 0.06 if boxes else 0.03
+            cx, cy, cw, ch = (
+                (x + sw * m) * W,
+                (y + sh * m) * H,
+                sw * (1 - 2 * m) * W,
+                sh * (1 - 2 * m) * H,
+            )
+            scale = min(cw / cut.width, ch / cut.height)
+            fit = cut.resize(
+                (max(1, int(cut.width * scale)), max(1, int(cut.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
+            px, py = int(cx + (cw - fit.width) / 2), int(cy + (ch - fit.height) / 2)
+            region = sheet.crop((px, py, px + fit.width, py + fit.height))
+            sheet.paste(ImageChops.multiply(region, fit), (px, py))
+            boxes.append(
+                [
+                    round(px / W, 4),
+                    round(py / H, 4),
+                    round(fit.width / W, 4),
+                    round(fit.height / H, 4),
+                ]
+            )
+        out = io.BytesIO()
+        sheet.save(out, "JPEG", quality=86)
+        _write(sheet_path, out.getvalue())
+        info = {"boxes": boxes}
+        _write(info_path, json.dumps(info).encode())
+        # older collages of the same birds are no use once a painting changes
+        with contextlib.suppress(OSError):
+            for old in folder.glob("collage_*"):
+                if (
+                    old.stem != f"collage_{tag}"
+                    and time.time() - old.stat().st_mtime > 86400
+                ):
+                    old.unlink()
+    try:
+        raw = sheet_path.read_bytes()
+    except OSError:
+        return None
+    src = _render(raw, size, None, folder / f"collage_{tag}_{size}.jpg", levels)
+    if not src:
+        return None
+    paper = _paper(src, folder / f"collage_{tag}.paper", levels)
+    return {
+        "src": src,
+        "boxes": info["boxes"],
+        "paper": paper,
+        "tag": tag,
+        "sheet": str(sheet_path),
+    }
+
+
+def _cluster(
+    species: list[dict[str, Any]],
+    n: int,
+    every_h: float,
+    mode: str,
+    style: str,
+    aspect: str,
+    base: str,
+    token: str,
+    fal_key: str,
+    data_dir: Path,
+    levels: str,
+) -> tuple[dict[str, Any], list[str]]:
+    """Today's busiest birds in one seamless picture.
+
+    Each bird gets its own AI painting (one new one per refresh, kept and
+    reused everywhere). Once all of them are painted they are cut out and
+    arranged on one sheet, and fal.ai repaints that collage as a single
+    scene: the blend. The blend is kept, and made again when the line-up
+    changes, at most once every ``every_h`` hours. Until the first blend is
+    ready the cut-out collage stands in; with AI painting off, or before any
+    bird is painted, it is a numbered montage of their plates and photos."""
+    birds = [dict(b) for b in sorted(species, key=lambda s: -s["count"])[:n]]
+    notices: list[str] = []
+    counts = {s["sci"]: s["count"] for s in species}
+    if mode in ("plate_gen", "gen"):
+        if not fal_key:
+            notices.append(NOTE_NO_KEY)
+        started = False
+        for b in birds:
+            pic, did, note = _generated(
+                b,
+                SIZE["gallery"],
+                data_dir,
+                fal_key,
+                allow_new=not started,
+                levels=levels,
+                style=style,
+            )
+            started = started or did
+            b["painted"] = pic is not None
+            if note and note not in notices:
+                notices.append(note)
+        painted = [b for b in birds if b["painted"]]
+        keys = [_pkey(_slug(b["sci"] or b["name"]), style) for b in painted]
+        made = (
+            _collage(keys, aspect, SIZE["cluster"], data_dir, levels)
+            if painted
+            else None
+        )
+        waiting = [b["name"] for b in birds if not b["painted"]]
+        bkey = _blend_key(style)
+        blend = _painting(bkey, SIZE["cluster"], data_dir, levels)
+        bmeta = _read_json(_gen_dir(data_dir) / f"{bkey}.json", {}) if blend else {}
+        bmeta = bmeta if isinstance(bmeta, dict) else {}
+        age_h = (time.time() - float(bmeta.get("made") or 0)) / 3600
+        if (
+            made
+            and not waiting
+            and len(painted) >= 2
+            and bmeta.get("tag") != made["tag"]
+            and (blend is None or age_h >= every_h)
+            and not started
+        ):
+            label = "today's birds together"
+            go, note = _may_paint(data_dir, bkey, label, fal_key, True)
+            if go:
+                _start_painting(
+                    {
+                        "key": bkey,
+                        "style": style,
+                        "collage": made["sheet"],
+                        "tag": made["tag"],
+                        "aspect": aspect,
+                        "birds": [
+                            {"name": b["name"], "sci": b["sci"]} for b in painted
+                        ],
+                    },
+                    data_dir,
+                    fal_key,
+                )
+                note = NOTE_PAINTING.format(name=label)
+            if note and note not in notices:
+                notices.append(note)
+        if blend is not None:
+            shown = [
+                {"name": b["name"], "sci": b["sci"], "count": counts.get(b["sci"], 0)}
+                for b in bmeta.get("birds") or []
+            ]
+            return {
+                "pic": blend,
+                "birds": shown,
+                "montage": False,
+                "waiting": [],
+                "aspect": aspect,
+            }, notices
+        if made:
+            label = GEN_STYLES[style][0].split(" (")[0].lower()
+            pic = {
+                "src": made["src"],
+                "kind": "collage",
+                "paper": made["paper"],
+                "credit": f"AI paintings, {label} (fal.ai nano-banana), after iNaturalist photos",
+            }
+            shown = [
+                {"name": b["name"], "sci": b["sci"], "count": b["count"]}
+                for b in painted
+            ]
+            return {
+                "pic": pic,
+                "birds": shown,
+                "montage": False,
+                "waiting": waiting,
+                "aspect": aspect,
+            }, notices
+    rows = [dict(b) for b in birds]
+    montage_mode = "plate_photo" if mode in ("plate_gen", "gen") else mode
+    notices += _attach_pictures(
+        rows,
+        montage_mode,
+        SIZE["gallery"],
+        base,
+        token,
+        fal_key,
+        data_dir,
+        levels,
+        style,
+        allow_new=False,
+    )
+    shown = [
+        {"name": r["name"], "sci": r["sci"], "count": r["count"], "pic": r.get("pic")}
+        for r in rows
+    ]
+    return {"pic": None, "birds": shown, "montage": True, "waiting": []}, notices
 
 
 # ----------------------------------------------------------------------
@@ -1000,6 +1414,12 @@ def fetch(
     caption = _choice(options.get("caption"), CAPTIONS)
     pictures = _choice(options.get("pictures"), PICTURES)
     photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
+    art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
+    cluster_n = _int(options.get("cluster_size"), 4, 2, CLUSTER_MAX)
+    cluster_every = _int(options.get("cluster_every"), 3, 1, 24)
+    # the cluster's sheet is laid out in the cell's own orientation
+    cw, ch = int(ctx.get("cell_w") or 0), int(ctx.get("cell_h") or 0)
+    aspect = "3:4" if cw and ch and ch > cw else "4:3"
     levels = _choice(options.get("panel"), LEVELS)
     chart_labels = _choice(options.get("chart_labels"), CHART_LABELS)
     sort = "count" if options.get("sort") == "count" else "recent"
@@ -1050,13 +1470,44 @@ def fetch(
     # Pictures only where the layout draws them: one big one for the single
     # bird layouts, a thumbnail per row for the list and gallery.
     notices: list[str] = []
+    cluster = None
     if layout in ("latest", "plate", "bleed") and latest:
         notices = _attach_pictures(
-            [latest], pictures, SIZE[layout], base, token, fal_key, data_dir, levels
+            [latest],
+            pictures,
+            SIZE[layout],
+            base,
+            token,
+            fal_key,
+            data_dir,
+            levels,
+            art_style,
         )
     elif layout in ("list", "gallery"):
         notices = _attach_pictures(
-            shown, pictures, SIZE[layout], base, token, fal_key, data_dir, levels
+            shown,
+            pictures,
+            SIZE[layout],
+            base,
+            token,
+            fal_key,
+            data_dir,
+            levels,
+            art_style,
+        )
+    elif layout == "cluster" and species:
+        cluster, notices = _cluster(
+            species,
+            cluster_n,
+            cluster_every,
+            pictures,
+            art_style,
+            aspect,
+            base,
+            token,
+            fal_key,
+            data_dir,
+            levels,
         )
 
     hourly_total = [0] * 24
@@ -1070,10 +1521,13 @@ def fetch(
     groups: tuple[str, ...] = ()
     if layout == "bleed":
         groups = FONT_GROUPS.get(caption, ())
-    elif layout == "plate":
+    elif layout in ("plate", "cluster"):
         groups = FONT_GROUPS["engraved"]
     credits = []
-    for s in [*shown, *([latest] if latest else [])]:
+    pictured = [*shown, *([latest] if latest else [])]
+    if cluster:
+        pictured = [{"pic": cluster["pic"]}] if cluster["pic"] else cluster["birds"]
+    for s in pictured:
         c = (s.get("pic") or {}).get("credit")
         if c and c not in credits:
             credits.append(c)
@@ -1086,6 +1540,8 @@ def fetch(
         "caption": caption,
         "pictures": pictures,
         "photo_tone": photo_tone,
+        "art_style": art_style,
+        "cluster": cluster,
         "panel": levels,
         "chart_labels": chart_labels,
         "sort": sort,
@@ -1112,8 +1568,8 @@ def fetch(
 # Admin page: the AI paintings
 # ----------------------------------------------------------------------
 
-_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}")
-_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60})__(\d{8}-\d{6})")
+_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(--[a-z]{1,20})?")
+_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z]{1,20})?)__(\d{8}-\d{6})")
 
 
 def _known_birds(data_dir: Path) -> list[tuple[str, str]]:
@@ -1133,38 +1589,59 @@ def _known_birds(data_dir: Path) -> list[tuple[str, str]]:
 
 
 def _gallery(data_dir: Path) -> dict[str, Any]:
-    """Everything the admin page shows, read from gen/."""
+    """Everything the admin page shows, read from gen/: one entry per
+    painting key, a bird in a style or a cluster blend in a style. The
+    cut-out collages are made from the birds' paintings and are not listed."""
     folder = _gen_dir(data_dir)
     prefs = _read_json(folder / "prefs.json", {})
     prefs = prefs if isinstance(prefs, dict) else {}
-    birds: dict[str, dict[str, Any]] = {}
+    entries: dict[str, dict[str, Any]] = {}
 
-    def bird(slug: str) -> dict[str, Any]:
-        return birds.setdefault(
-            slug,
+    def entry(key: str) -> dict[str, Any]:
+        base, _, style = key.partition("--")
+        style = style if style in GEN_STYLES else "gould"
+        return entries.setdefault(
+            key,
             {
-                "slug": slug,
-                "name": slug.replace("_", " ").capitalize(),
+                "slug": key,
+                "cluster": base == "cluster",
+                "name": "Today's birds together"
+                if base == "cluster"
+                else base.replace("_", " ").capitalize(),
+                "birds": [],
                 "sci": "",
+                "style": style,
+                "style_label": GEN_STYLES[style][0],
                 "active": None,
                 "archive": [],
                 "error": None,
-                "prefer": bool((prefs.get(slug) or {}).get("prefer")),
+                "prefer": bool((prefs.get(key) or {}).get("prefer")),
             },
         )
+
+    def take(e: dict[str, Any], meta: Any) -> None:
+        if not isinstance(meta, dict):
+            return
+        if meta.get("name") and not e["cluster"]:
+            e["name"] = str(meta["name"])
+        e["sci"] = e["sci"] or str(meta.get("sci") or "")
+        if isinstance(meta.get("birds"), list) and not e["birds"]:
+            e["birds"] = [
+                b for b in meta["birds"] if isinstance(b, dict) and b.get("name")
+            ]
 
     with contextlib.suppress(OSError):
         for f in folder.glob("*.jpg"):
             if (
-                not _SLUG_RE.fullmatch(f.stem)
+                f.stem.startswith("collage_")
+                or not _SLUG_RE.fullmatch(f.stem)
                 or not (folder / f"{f.stem}.json").exists()
             ):
                 continue  # a resized copy, not a painting
             meta = _read_json(folder / f"{f.stem}.json", {})
-            b = bird(f.stem)
-            b["name"] = str(meta.get("name") or b["name"])
-            b["sci"] = str(meta.get("sci") or "")
-            b["active"] = {
+            e = entry(f.stem)
+            take(e, meta)
+            e["active"] = {
                 "file": f.name,
                 "credit": str(meta.get("credit") or ""),
                 "made": time.strftime(
@@ -1176,12 +1653,9 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
             m = _ARCHIVED_RE.fullmatch(f.stem)
             if not m:
                 continue
-            meta = _read_json(f.with_suffix(".json"), {})
-            b = bird(m.group(1))
-            if not b["sci"]:
-                b["name"] = str(meta.get("name") or b["name"])
-                b["sci"] = str(meta.get("sci") or "")
-            b["archive"].append(
+            e = entry(m.group(1))
+            take(e, _read_json(f.with_suffix(".json"), {}))
+            e["archive"].append(
                 {
                     "file": f.name,
                     "made": datetime.strptime(m.group(2), "%Y%m%d-%H%M%S").strftime(
@@ -1190,30 +1664,46 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
                 }
             )
         for f in folder.glob("*.err"):
-            if _SLUG_RE.fullmatch(f.stem):
+            if _SLUG_RE.fullmatch(f.stem) and not f.stem.startswith("collage_"):
                 err = _read_json(f, {})
-                bird(f.stem)["error"] = str(err.get("why") or "failed")
+                e = entry(f.stem)
+                take(e, err)
+                e["error"] = str(err.get("why") or "failed")
     with _PAINTING_LOCK:
         running = set(_PAINTING)
-    for slug, b in birds.items():
-        b["painting"] = slug in running
-    # a bird with only a failed attempt has no saved names: find them by slug
+    # a bird with only an old failed attempt has no saved names: find them by slug
     known = {_slug(sci): (n, sci) for n, sci in _known_birds(data_dir)}
-    for b in birds.values():
-        if b["slug"] in known:
-            name, sci = known[b["slug"]]
-            b["sci"] = b["sci"] or sci
-            if b["name"].lower() == b["slug"].replace("_", " "):
-                b["name"] = name
+    for key, e in entries.items():
+        e["painting"] = key in running
+        base = key.partition("--")[0]
+        if not e["cluster"] and base in known:
+            name, sci = known[base]
+            e["sci"] = e["sci"] or sci
+            if e["name"].lower() == base.replace("_", " "):
+                e["name"] = name
     ordered = sorted(
-        birds.values(), key=lambda b: (b["active"] is None, b["name"].lower())
+        entries.values(),
+        key=lambda e: (
+            e["active"] is None,
+            e["name"].lower(),
+            e["style"],
+        ),
     )
     return {
         "birds": ordered,
         "used": _budget_used(folder),
         "cap": GEN_DAILY_CAP,
         "running": sorted(running),
+        "styles": [(k, v[0]) for k, v in GEN_STYLES.items()],
     }
+
+
+def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
+    """The painting job that repaints an admin-page entry, or None. A blend
+    is not repainted from here: deleting it lets the widget blend again."""
+    if e["cluster"] or not e["sci"]:
+        return None
+    return {"key": e["slug"], "style": e["style"], "name": e["name"], "sci": e["sci"]}
 
 
 def blueprint() -> Any:
@@ -1265,20 +1755,20 @@ def blueprint() -> Any:
     def back() -> Any:
         return redirect(url_for("backyard_birds_admin.index"))
 
-    def start(name: str, sci: str) -> None:
+    def start(job: dict[str, Any], label: str) -> None:
         key = fal_key()
         folder = _gen_dir(data_dir())
         if not key:
             flash("Add a fal.ai key in this widget's settings first.", "warn")
         elif _budget_used(folder) >= GEN_DAILY_CAP:
             flash(f"Today's limit of {GEN_DAILY_CAP} paintings is used up.", "warn")
-        elif not _start_painting(name, sci, data_dir(), key):
-            flash(f"The {name} is already being painted.", "info")
+        elif not _start_painting(job, data_dir(), key):
+            flash(f"{label} is already being painted.", "info")
         else:
             with contextlib.suppress(OSError):
-                (folder / f"{_slug(sci or name)}.err").unlink()
+                (folder / f"{job['key']}.err").unlink()
             flash(
-                f"Painting the {name}. It takes up to a minute; reload this page to see it.",
+                f"Painting {label}. It takes up to a minute; reload this page to see it.",
                 "success",
             )
 
@@ -1313,16 +1803,24 @@ def blueprint() -> Any:
         if not sci or not re.fullmatch(r"[A-Z][a-z]+ [a-z-]+( [a-z-]+)?", sci):
             flash("Give the scientific name, for example Turdus merula.", "warn")
             return back()
-        start(name[:80], sci)
+        style = _choice(request.form.get("style"), GEN_STYLE_IDS)
+        job = {
+            "key": _pkey(_slug(sci), style),
+            "style": style,
+            "name": name[:80],
+            "sci": sci,
+        }
+        start(job, f"the {name[:80]}")
         return back()
 
     @bp.post("/<slug>/repaint")
     def repaint(slug: str) -> Any:
         slug = slug_or_404(slug)
-        b = next((b for b in _gallery(data_dir())["birds"] if b["slug"] == slug), None)
-        if b is None or not b["sci"]:
+        e = next((e for e in _gallery(data_dir())["birds"] if e["slug"] == slug), None)
+        job = _job_for(e) if e else None
+        if job is None:
             abort(404)
-        start(b["name"], b["sci"])
+        start(job, f"the {e['name']}")
         return back()
 
     @bp.post("/<slug>/delete")

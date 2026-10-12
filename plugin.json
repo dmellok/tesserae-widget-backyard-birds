@@ -1,9 +1,9 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "kind": "widget",
-  "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others. Six layouts, from a field log to a full-bleed plate. Colour, greyscale and black-and-white panels. Runs a demo garden until you point it at BirdNET-Go.",
+  "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
   "supports": {
     "sizes": [
@@ -70,6 +70,10 @@
         {
           "value": "bleed",
           "label": "Full bleed: the latest bird's picture fills the cell"
+        },
+        {
+          "value": "cluster",
+          "label": "Cluster: today's busiest birds together in one picture"
         }
       ]
     },
@@ -123,7 +127,7 @@
       "type": "select",
       "label": "Pictures",
       "default": "plate_photo",
-      "help": "Classic plates come from a reviewed pack of public-domain illustrations; birds without one get a photo toned to match. The AI options need a fal.ai key in the widget settings.",
+      "help": "Classic plates come from a reviewed pack of public-domain illustrations; birds without one get a photo toned to match. The AI options need a fal.ai key in the widget settings. In the cluster layout the AI options paint each bird and blend them into one picture; otherwise it shows their own pictures side by side.",
       "choices": [
         {
           "value": "plate_photo",
@@ -161,6 +165,93 @@
         {
           "value": "natural",
           "label": "Natural colour"
+        }
+      ]
+    },
+    {
+      "name": "art_style",
+      "type": "select",
+      "label": "Art style (AI paintings)",
+      "default": "gould",
+      "help": "How AI paintings are painted. Each style keeps its own painting per bird, so switching back costs nothing. The engraving suits black and white panels.",
+      "choices": [
+        {
+          "value": "gould",
+          "label": "Hand-coloured lithograph (Gould)"
+        },
+        {
+          "value": "audubon",
+          "label": "Watercolour after Audubon"
+        },
+        {
+          "value": "woodblock",
+          "label": "Japanese woodblock print"
+        },
+        {
+          "value": "engraving",
+          "label": "Black-ink engraving"
+        },
+        {
+          "value": "linocut",
+          "label": "Linocut"
+        },
+        {
+          "value": "sketch",
+          "label": "Field sketch"
+        }
+      ]
+    },
+    {
+      "name": "cluster_size",
+      "type": "select",
+      "label": "Birds in the cluster",
+      "default": "4",
+      "help": "Only used by the cluster layout: how many of today's busiest birds it shows.",
+      "choices": [
+        {
+          "value": "2",
+          "label": "2"
+        },
+        {
+          "value": "3",
+          "label": "3"
+        },
+        {
+          "value": "4",
+          "label": "4"
+        },
+        {
+          "value": "5",
+          "label": "5"
+        },
+        {
+          "value": "6",
+          "label": "6"
+        }
+      ]
+    },
+    {
+      "name": "cluster_every",
+      "type": "select",
+      "label": "Re-blend the cluster",
+      "default": "3",
+      "help": "Only used by the cluster layout with an AI option. Each bird is painted on its own and kept; the paintings are then blended into one picture by one more AI pass (about US$0.04). When today's busiest birds change, the picture is blended again at most this often.",
+      "choices": [
+        {
+          "value": "1",
+          "label": "At most hourly"
+        },
+        {
+          "value": "3",
+          "label": "At most every 3 hours"
+        },
+        {
+          "value": "6",
+          "label": "At most every 6 hours"
+        },
+        {
+          "value": "24",
+          "label": "At most daily"
         }
       ]
     },

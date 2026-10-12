@@ -29,6 +29,12 @@
       <label for="bb-name">Common name (optional)</label>
       <input type="text" id="bb-name" name="name" placeholder="Eurasian Blackbird">
     </div>
+    <div class="field">
+      <label for="bb-style">Art style</label>
+      <select id="bb-style" name="style">
+        {% for value, label in g.styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+    </div>
     <div class="actions">{{ button('Paint', icon='paint-brush', disabled=not has_key) }}</div>
   </form>
 </section>
@@ -42,7 +48,8 @@
       <header class="bb-bird-head">
         <div>
           <h3>{{ b.name }}</h3>
-          {% if b.sci %}<i>{{ b.sci }}</i>{% endif %}
+          {% if b.cluster %}<i>{{ b.birds|map(attribute='name')|join(', ') }}</i>{% elif b.sci %}<i>{{ b.sci }}</i>{% endif %}
+          <span class="bb-style">{{ b.style_label }}</span>
         </div>
         {% if b.painting %}<span class="bb-tag">painting…</span>{% endif %}
       </header>
@@ -51,11 +58,15 @@
         <img src="{{ url_for('backyard_birds_admin.image', name=b.active.file) }}" alt="{{ b.name }}" loading="lazy">
       </a>
       <p class="bb-meta">Made {{ b.active.made }} · {{ b.active.credit }}</p>
+      {% if b.cluster %}
+      <p class="bb-meta">Blended from each bird's own painting. Delete it to have the widget blend the current birds again on its next refresh.</p>
+      {% else %}
       <form method="post" action="{{ url_for('backyard_birds_admin.prefer', slug=b.slug) }}" class="bb-prefer">
         <input type="hidden" name="on" value="{{ '0' if b.prefer else '1' }}">
         <label class="bb-check"><input type="checkbox" {% if b.prefer %}checked{% endif %} onchange="this.form.submit()">
           Use instead of the classic plate</label>
       </form>
+      {% endif %}
       {% else %}
       <p class="bb-none">No current painting.{% if b.archive %} Bring back an earlier one below, or repaint.{% endif %}</p>
       {% endif %}
@@ -70,13 +81,13 @@
       <div class="bb-actions">
         {% if b.sci %}
         <form method="post" action="{{ url_for('backyard_birds_admin.repaint', slug=b.slug) }}"
-              onsubmit="return confirm('Paint the {{ b.name }} again (about US$0.04)? The current painting is kept below.');">
+              onsubmit="return confirm({{ ('Paint the ' ~ b.name ~ ' again (about US$0.04)? The current painting is kept below.')|tojson|forceescape }});">
           {{ button('Repaint', icon='arrows-clockwise', variant='ghost', disabled=not has_key or b.painting) }}
         </form>
         {% endif %}
         {% if b.active %}
         <form method="post" action="{{ url_for('backyard_birds_admin.delete', slug=b.slug) }}"
-              onsubmit="return confirm('Delete the current painting of the {{ b.name }}? With an AI picture option on, it is painted again the next time it is shown.');">
+              onsubmit="return confirm({{ ('Delete the current painting of ' ~ ('' if b.cluster else 'the ') ~ b.name ~ '? With an AI picture option on, it is painted again the next time it is shown.')|tojson|forceescape }});">
           {{ button('Delete', icon='trash', variant='ghost danger') }}
         </form>
         {% endif %}
@@ -116,7 +127,7 @@
 
 <style>
   .bb-budget { margin: 0 0 12px; color: var(--t-fg-soft); }
-  .bb-paint { display: grid; grid-template-columns: 2fr 2fr auto; gap: 12px; align-items: start; }
+  .bb-paint { display: grid; grid-template-columns: 2fr 2fr 1.4fr auto; gap: 12px; align-items: start; }
   .bb-paint .field { margin: 0; }
   .bb-paint .actions { margin: 24px 0 0; }
   @media (max-width: 640px) { .bb-paint { grid-template-columns: 1fr; } .bb-paint .actions { margin: 0; } }
@@ -124,7 +135,8 @@
   .bb-bird { border: 1px solid var(--t-border); border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--t-surface); }
   .bb-bird-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
   .bb-bird-head h3 { margin: 0; font-size: 15px; }
-  .bb-bird-head i { font-size: 12px; color: var(--t-fg-soft); }
+  .bb-bird-head i { display: block; font-size: 12px; color: var(--t-fg-soft); }
+  .bb-style { display: inline-block; margin-top: 4px; font-size: 11px; font-weight: 600; padding: 1px 6px; border: 1px solid var(--t-border); border-radius: 2px; color: var(--t-fg-soft); }
   .bb-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 2px 6px; background: var(--t-surface-hover); border-radius: 2px; }
   .bb-main img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; background: #f3ead6; border-radius: 4px; }
   .bb-meta, .bb-none { margin: 0; font-size: 12px; color: var(--t-fg-soft); }

@@ -308,6 +308,34 @@ function bleed(d, showSci, tone, caption) {
   return `<div class="bl cap-${caption}${L.pic && L.pic.paper ? ' on-paper' : ''}"${paper}>${pic(L.pic, 'bp', tone)}${cap}${credit}</div>`;
 }
 
+/* Cluster: today's busiest birds together in one picture. With AI paintings
+   it is the birds' own paintings blended into one scene (or, until that is
+   ready, cut out and laid on one sheet); otherwise a numbered montage of
+   their plates and photos, numbered to match the key. */
+function cluster(d, showSci, tone) {
+  const C = d.cluster || { birds: [] };
+  const birds = C.birds || [];
+  const numbered = !C.pic;
+  const art = C.pic
+    ? `<div class="cl-sheet" style="--r:${C.aspect === '3:4' ? 0.75 : 4 / 3}"><img src="${C.pic.src}" alt=""></div>`
+    : `<div class="cl-mont n${Math.min(birds.length, 6)}">${birds.map((b, i) => `
+        <figure>${pic(b.pic, 'cl-tile', tone)}<figcaption>${i + 1}</figcaption></figure>`).join('')}</div>`;
+  const rows = birds.map((b, i) => `
+      <li>${numbered ? `<em>${i + 1}.</em>` : ''}<span>${esc(b.name)}${showSci && b.sci ? `<i>${esc(b.sci)}</i>` : ''}</span><b>${b.count}</b></li>`).join('');
+  const waiting = (C.waiting || []).length ? `<div class="cl-f">Still to paint: ${C.waiting.map(esc).join(', ')}</div>` : '';
+  const paper = C.pic && C.pic.paper ? ` style="background:${esc(C.pic.paper)}"` : '';
+  return `
+    <div class="cl${numbered ? ' montage' : ''}"${paper}>
+      <div class="cl-pic">${art}</div>
+      <div class="cl-key">
+        <div class="cl-k">${esc(d.label)} · ${esc(d.date)}</div>
+        <div class="cl-t">Heard to-day</div>
+        <ol>${rows}</ol>
+        <div class="cl-f">${d.species_today} species · ${d.detections_today} calls to-day</div>${waiting}
+      </div>
+    </div>${foot(d)}`;
+}
+
 /* Chromium ignores @font-face inside a shadow root, so the caption faces are
    registered on the host document, once per set: the id is a hash of the CSS,
    and two cells sharing a style share the rules. */
@@ -343,6 +371,7 @@ export default function render(shadow, ctx) {
   else if (layout === 'chart') body = chart(d);
   else if (layout === 'plate') body = plate(d, showSci, tone);
   else if (layout === 'bleed') body = bleed(d, showSci, tone, d.caption || 'band');
+  else if (layout === 'cluster') body = cluster(d, showSci, tone);
   else body = list(d, showSci, tone);
 
   installFonts(shadow, d.font_css);
@@ -655,6 +684,44 @@ export default function render(shadow, ctx) {
       .lv-gray16 .tg-bg polygon, .lv-gray4 .tg-bg polygon { fill: #fff; stroke: #000; }
       .lv-mono .tg-bg polygon { fill: #fff; }
       .lv-mono .fo-head, .lv-mono .fo-cap, .lv-mono .mu, .lv-mono .fg, .lv-mono .cy { -webkit-text-stroke: .35px currentColor; }
+
+      /* cluster: one picture of today's birds with a key beside or below it */
+      .lay-cluster { background: #f3ead6; color: #2a2116; }
+      .cl { flex: 1; min-height: 0; display: flex; gap: 3.4cqmin; padding: 3.4cqmin; background: #f3ead6; }
+      .cl-pic { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; container-type: size; }
+      .cl-sheet { position: relative; margin: auto; aspect-ratio: var(--r); width: min(100cqw, calc(100cqh * var(--r))); }
+      .cl-sheet img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+      .cl-mont { flex: 1; min-height: 0; display: grid; gap: 1.6cqmin; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 1fr; }
+      .cl-mont.n3, .cl-mont.n5, .cl-mont.n6 { grid-template-columns: repeat(3, 1fr); }
+      .cl-mont figure { margin: 0; position: relative; min-height: 0; display: flex; background: #fffdf6; box-shadow: 0 0 0 1px #c9b98f; }
+      .cl-tile { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+      .cl-tile.fit { padding: 1cqmin; }
+      .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: 'IM Fell English', Georgia, serif; font-size: 3.4cqmin; line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
+      .cl-key { flex: 0 0 34%; min-width: 0; display: flex; flex-direction: column; justify-content: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cl-k { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.6cqmin; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .cl-t { font-family: 'IM Fell English SC', Georgia, serif; font-size: 6cqmin; letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
+      .cl ol { list-style: none; margin: 2cqmin 0 0; padding: 0; }
+      .cl li { display: flex; align-items: baseline; gap: 1.4cqmin; padding: .7cqmin 0; border-bottom: 1px solid #b7a67c; font-size: 3.4cqmin; }
+      .cl li em { font-style: normal; min-width: 3.4cqmin; }
+      .cl li span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .cl li span i { margin-left: 1.2cqmin; font-size: 2.6cqmin; opacity: .75; }
+      .cl li b { font-weight: 400; }
+      .cl-f { margin-top: 1.6cqmin; font-style: italic; font-size: 2.6cqmin; opacity: .8; }
+      .lay-cluster .credit { font-family: 'IM Fell English', Georgia, serif; font-style: italic; }
+      @container (max-aspect-ratio: 1) {
+        .cl { flex-direction: column; gap: 2.6cqmin; }
+        .cl-key { flex: 0 0 auto; justify-content: flex-start; }
+        .cl-t { font-size: 7cqmin; }
+        .cl li { font-size: 3.8cqmin; padding: .9cqmin 0; }
+        .cl-mont.n3 { grid-template-columns: repeat(2, 1fr); }
+        .cl-mont.n3 figure:last-child { grid-column: 1 / -1; }
+      }
+      .lv-gray16 .lay-cluster, .lv-gray4 .lay-cluster, .lv-mono .lay-cluster,
+      .lv-gray16 .cl, .lv-gray4 .cl, .lv-mono .cl { background: #fff !important; color: #000; }
+      .lv-gray16 .cl li, .lv-gray4 .cl li, .lv-mono .cl li { border-bottom-color: #000; }
+      .lv-gray16 .cl-t, .lv-gray4 .cl-t, .lv-mono .cl-t { box-shadow: 0 2px 0 #fff, 0 3px 0 #000; }
+      .lv-gray16 .cl-mont figure, .lv-gray4 .cl-mont figure, .lv-mono .cl-mont figure { background: #fff; box-shadow: 0 0 0 1px #000; }
+      .lv-mono .cl-key { -webkit-text-stroke: .35px currentColor; }
 
       /* chart labels */
       .cells i { position: relative; }
