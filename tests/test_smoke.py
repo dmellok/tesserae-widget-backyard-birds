@@ -609,3 +609,24 @@ def test_cluster_reblends_only_after_the_interval(tmp_path, offline):
     assert len(r["cluster"]["birds"]) == 3
     (blend,) = [e for e in server._gallery(tmp_path)["birds"] if e["cluster"]]
     assert len(blend["archive"]) == 1, "the earlier blend is kept"
+
+
+@pytest.mark.parametrize("n", [2, 3, 4, 5, 6])
+@pytest.mark.parametrize("portrait", [False, True])
+def test_collage_is_an_oval_cluster(n, portrait):
+    slots = server._oval_slots(n, portrait)
+    assert len(slots) == n
+    for x, y, w, h in slots:
+        assert 0 <= x and 0 <= y and x + w <= 1.0001 and y + h <= 1.0001
+    centres = [(x + w / 2, y + h / 2) for x, y, w, h in slots]
+    if n >= 4:
+        # the busiest bird sits in the middle, largest, the rest round it
+        cx, cy = centres[0]
+        assert abs(cx - 0.5) < 0.01 and abs(cy - 0.5) < 0.01
+        assert slots[0][2] * slots[0][3] >= max(w * h for _x, _y, w, h in slots[1:])
+        ring = centres[1:]
+    else:
+        ring = centres
+    # ring birds sit roughly on one ellipse round the centre
+    radii = [((x - 0.5) / 0.33) ** 2 + ((y - 0.5) / 0.31) ** 2 for x, y in ring]
+    assert max(radii) - min(radii) < 0.6, radii

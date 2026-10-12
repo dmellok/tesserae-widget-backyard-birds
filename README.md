@@ -64,7 +64,7 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 The cluster shows the day's busiest birds (two to six, set by **Birds in the cluster**) together in one picture. With an AI picture option on:
 
 1. Each bird gets its own AI painting, one new one per refresh, the same paintings the other layouts use.
-2. Once all of them are painted, they are cut out and arranged on one sheet. This collage is shown while step 3 runs.
+2. Once all of them are painted, they are cut out and arranged on one sheet in an oval cluster, the busiest bird large in the middle and the rest around it. This collage is shown while step 3 runs.
 3. One more fal.ai pass repaints the collage as a single seamless scene: one branch, one background, one light, each bird kept as painted. That blended picture is kept.
 
 When the busiest birds change, the new bird is painted and the picture is blended again, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default). Each blend costs about US$0.04 and counts toward the daily limit. With AI painting off, or before any bird is painted, the cluster is a numbered montage of the birds' own plates and photos. Either way a key lists the birds with today's counts.

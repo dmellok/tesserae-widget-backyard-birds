@@ -728,9 +728,10 @@ GEN_STYLE_IDS = tuple(GEN_STYLES)
 GEN_BLEND = (
     "This picture is a collage of {n} birds, each painted on its own: {birds}. Repaint it "
     "as one seamless picture, {style}, with all the birds together in a single natural "
-    "scene: one shared branch or group of branches, one continuous background, the same "
-    "light and paper throughout. Keep every bird's species, plumage, markings, pose and "
-    "size as painted, and keep each about where it is. No text, no labels, no numbers, no "
+    "scene: the birds gathered in an oval cluster, like a Victorian vignette, on branches "
+    "and foliage that join them, one continuous background, the same light and paper "
+    "throughout. Keep every bird's species, plumage, markings, pose and size as painted, "
+    "and keep each about where it is in the oval. No text, no labels, no numbers, no "
     "border, no signature."
 )
 GEN_ONE = (
@@ -1078,22 +1079,47 @@ def _attach_pictures(
     return notices
 
 
-# Where each bird goes on a collage sheet, as (x, y, w, h) fractions of a
-# landscape sheet, busiest bird first; portrait sheets swap the axes.
-_COLLAGE_SLOTS: dict[int, list[tuple[float, float, float, float]]] = {
-    1: [(0, 0, 1, 1)],
-    2: [(0, 0, 0.5, 1), (0.5, 0, 0.5, 1)],
-    3: [(0, 0, 0.56, 1), (0.56, 0, 0.44, 0.5), (0.56, 0.5, 0.44, 0.5)],
-    4: [(0, 0, 0.5, 0.5), (0.5, 0, 0.5, 0.5), (0, 0.5, 0.5, 0.5), (0.5, 0.5, 0.5, 0.5)],
-    5: [
-        (0, 0, 0.4, 1),
-        (0.4, 0, 0.3, 0.5),
-        (0.7, 0, 0.3, 0.5),
-        (0.4, 0.5, 0.3, 0.5),
-        (0.7, 0.5, 0.3, 0.5),
-    ],
-    6: [(x / 3, y / 2, 1 / 3, 0.5) for y in range(2) for x in range(3)],
-}
+# Collage layout version: part of a collage's cache tag, so changing the
+# arrangement rebuilds the sheets (and lets the blend run again).
+COLLAGE_LAYOUT = "oval2"
+
+
+def _oval_slots(
+    n: int, portrait: bool = False
+) -> list[tuple[float, float, float, float]]:
+    """Where each bird goes on the collage sheet, as (x, y, w, h) fractions,
+    busiest first: an oval cluster like a Victorian vignette, following the
+    sheet's own shape. With four or more birds the busiest sits large in the
+    middle and the rest ring it, starting at the top; two or three birds
+    share the ring between them. Neighbours may overlap a little: the
+    cut-outs are multiplied onto the sheet, so overlaps read as ink."""
+    import math
+
+    def at(
+        cx: float, cy: float, w: float, h: float
+    ) -> tuple[float, float, float, float]:
+        x = min(max(cx - w / 2, 0.0), 1 - w)
+        y = min(max(cy - h / 2, 0.0), 1 - h)
+        return (x, y, w, h)
+
+    if n <= 1:
+        return [at(0.5, 0.5, 0.84, 0.88)]
+    if n == 2:
+        if portrait:
+            return [at(0.5, 0.29, 0.86, 0.5), at(0.5, 0.71, 0.86, 0.5)]
+        return [at(0.29, 0.5, 0.5, 0.86), at(0.71, 0.5, 0.5, 0.86)]
+    if n == 3:
+        ring, rx, ry, w, h, centre = 3, 0.25, 0.24, 0.48, 0.52, []
+    else:
+        ring, rx, ry = n - 1, 0.33, 0.31
+        w = min(0.36, 1.05 * 2 * math.pi * rx / ring)
+        h = min(0.42, 1.05 * 2 * math.pi * ry / ring)
+        centre = [at(0.5, 0.5, 0.44, 0.52)]
+    slots = []
+    for i in range(ring):
+        a = math.radians(-90 + 360 * i / ring)
+        slots.append(at(0.5 + rx * math.cos(a), 0.5 + ry * math.sin(a), w, h))
+    return centre + slots
 
 
 def _cutout(raw: bytes) -> tuple[Any, tuple[int, int, int]] | None:
@@ -1151,7 +1177,9 @@ def _collage(
             stamps.append(f"{k}:{int((folder / f'{k}.jpg').stat().st_mtime)}")
     if len(stamps) != len(keys) or not keys:
         return None
-    tag = hashlib.sha1(f"{'|'.join(stamps)}|{aspect}|{size}".encode()).hexdigest()[:16]
+    tag = hashlib.sha1(
+        f"{'|'.join(stamps)}|{aspect}|{size}|{COLLAGE_LAYOUT}".encode()
+    ).hexdigest()[:16]
     sheet_path, info_path = (
         folder / f"collage_{tag}.jpg",
         folder / f"collage_{tag}.json",
@@ -1174,13 +1202,10 @@ def _collage(
         W, H = (size * 3 // 4, size) if portrait else (size, size * 3 // 4)
         avg = [sum(p[i] for _c, p in cuts) // len(cuts) for i in range(3)]
         sheet = Image.new("RGB", (W, H), tuple(avg))
-        slots = _COLLAGE_SLOTS[min(len(cuts), 6)]
+        slots = _oval_slots(len(cuts), portrait)
         boxes = []
         for (cut, _p), (x, y, sw, sh) in zip(cuts, slots, strict=False):
-            if portrait:
-                x, y, sw, sh = y, x, sh, sw
-            # a little air round each bird; the busiest one a touch larger
-            m = 0.06 if boxes else 0.03
+            m = 0.03  # a little air round each bird
             cx, cy, cw, ch = (
                 (x + sw * m) * W,
                 (y + sh * m) * H,
