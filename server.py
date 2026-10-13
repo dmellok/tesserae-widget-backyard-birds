@@ -181,6 +181,56 @@ def _is_progress(note: str) -> bool:
     return note.startswith(("Painting ", "AI paintings: today's limit"))
 
 
+def _rarity(
+    data_dir: Path, species: list[dict[str, Any]], today: str
+) -> dict[str, tuple[str, float]]:
+    """How usual each of today's birds is in this garden, from a log the
+    widget keeps of the days each species was heard (gen-free, in
+    rarity.json). Until a week has been logged it says so plainly; after
+    that: first visit, rare here, occasional, regular or daily, from the
+    share of logged days in the last 30 on which the bird was heard."""
+    path = data_dir / "rarity.json"
+    log = _read_json(path, {})
+    log = log if isinstance(log, dict) else {}
+    days = log.get("days") if isinstance(log.get("days"), list) else []
+    seen = log.get("seen") if isinstance(log.get("seen"), dict) else {}
+    changed = False
+    if today not in days:
+        days.append(today)
+        changed = True
+    for s in species:
+        key = s.get("sci") or s["name"]
+        hits = seen.setdefault(key, [])
+        if today not in hits:
+            hits.append(today)
+            changed = True
+    days = sorted(days)[-60:]
+    window = days[-30:]
+    if changed:
+        seen = {k: sorted(v)[-60:] for k, v in seen.items()}
+        _write(path, json.dumps({"days": days, "seen": seen}).encode())
+    out: dict[str, tuple[str, float]] = {}
+    for s in species:
+        key = s.get("sci") or s["name"]
+        hits = [d for d in seen.get(key, []) if d in window]
+        n, span = len(hits), len(window)
+        share = n / span if span else 1.0
+        if span < 7:
+            text = f"heard {n} of {span} day{'' if span == 1 else 's'} logged"
+        elif n == 1 and len(seen.get(key, [])) == 1:
+            text = "first visit"
+        elif share <= 0.1:
+            text = "rare here"
+        elif share <= 0.35:
+            text = "occasional"
+        elif share <= 0.75:
+            text = "regular"
+        else:
+            text = "daily visitor"
+        out[key] = (text, round(share, 3))
+    return out
+
+
 def _choice(value: Any, allowed: tuple[str, ...]) -> str:
     v = str(value or "").strip()
     return v if v in allowed else allowed[0]
@@ -871,8 +921,22 @@ CLUSTER_MAX = 6
 # The cluster as a specimen sheet (each bird printed as painted) or blended
 # into one scene by a final AI pass.
 CLUSTER_STYLES = ("sheet", "numbered", "wreath", "notebook", "drawer", "blend")
+# Where the birds go on a printed cluster page; "auto" is the look's own.
+ARRANGEMENTS = ("auto", "oval", "circle", "ring", "rows", "scatter", "heap")
+# How big each bird is drawn: true to size, rarest or busiest biggest, alike.
+SIZINGS = ("true", "rare", "busy", "same")
+# What may be printed under each bird on a cluster page, in this order.
+LABEL_LINES = ("name", "sci", "count", "last", "rarity", "new")
+# The longest text each line can take, for reserving room when packing.
+_LABEL_ROOM = {
+    "sci": None,
+    "count": "999 calls to-day",
+    "last": "last heard 23:59",
+    "rarity": "heard 30 of 30 days",
+    "new": "new",
+}
 # Layout version of the specimen sheet, part of its cache tag.
-SHEET_LAYOUT = "sheet4"
+SHEET_LAYOUT = "sheet7"
 # Most birds a specimen sheet shows.
 SHEET_MAX = 24
 # Label type size as a fraction of the sheet's height.
@@ -1404,51 +1468,135 @@ def _specimen_sheet(
     levels: str,
     label: float = SHEET_LABEL,
     mode: str = "sheet",
+    pictures: str = "gen",
+    lines: tuple[str, ...] = ("name",),
+    arrange: str = "auto",
+    sizing: str = "true",
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """The cluster as a specimen sheet: today's busiest birds, each painted
-    on its own (one new painting per refresh), cut out and printed on one
-    page. No blend: the birds stay as painted. None until a bird is painted."""
+    """The cluster as a printed page: today's busiest birds cut out and laid
+    out together. With an AI picture option each bird is its own AI
+    painting (one new one per refresh); with classic plates it is cut from
+    the bird's plate, with no fal at all, and birds without a plate wait
+    (or use a painting kept from before). None until a bird has a source."""
     birds = [dict(b) for b in sorted(species, key=lambda s: -s["count"])[:n]]
     notices: list[str] = []
-    if not fal_key:
+    ai = pictures in ("plate_gen", "gen")
+    folder = _gen_dir(data_dir)
+    pack = _pack() if pictures.startswith("plate") else {}
+    credits: list[str] = []
+    if ai and not fal_key:
         notices.append(NOTE_NO_KEY)
     started = False
     for b in birds:
-        pic, did, note = _generated(
-            b,
-            SIZE["gallery"],
-            data_dir,
-            fal_key,
-            allow_new=not started,
-            levels=levels,
-            style=style,
-        )
-        started = started or did
-        b["painted"] = pic is not None
-        if note and note not in notices:
-            notices.append(note)
-    painted = [b for b in birds if b["painted"]]
-    if not painted:
+        slug = _slug(b["sci"] or b["name"])
+        painting = _pkey(slug, style)
+        b["key"] = None
+        if ai:
+            pic, did, note = _generated(
+                b,
+                SIZE["gallery"],
+                data_dir,
+                fal_key,
+                allow_new=not started,
+                levels=levels,
+                style=style,
+            )
+            started = started or did
+            if note and note not in notices:
+                notices.append(note)
+            if pic is not None:
+                b["key"] = painting
+                credits.append(
+                    "AI paintings, "
+                    + GEN_STYLES[style][0].split(" (")[0].lower()
+                    + " (fal.ai nano-banana)"
+                )
+            continue
+        # classic plates: the plate's crop, kept in gen/ as <slug>--plate.jpg
+        # (no record file beside it, so the paintings page does not list it)
+        plate_key = f"{slug}--plate"
+        if pack.get(b["sci"]):
+            if not (folder / f"{plate_key}.jpg").exists():
+                pic = _plate(b["sci"], pack, 1200, data_dir)
+                if pic:
+                    _write(
+                        folder / f"{plate_key}.jpg",
+                        base64.b64decode(pic["src"].split(",", 1)[1]),
+                    )
+            if (folder / f"{plate_key}.jpg").exists():
+                b["key"] = plate_key
+                src = str((pack[b["sci"]] or {}).get("source") or "Classic plate")
+                credits.append(f"{src} · public domain")
+                continue
+        if (folder / f"{painting}.jpg").exists():
+            b["key"] = painting
+            credits.append("AI painting (fal.ai nano-banana)")
+    ready = [b for b in birds if b["key"]]
+    if not ready:
         return None, notices
-    keys = [_pkey(_slug(b["sci"] or b["name"]), style) for b in painted]
-    made = _sheet(painted, keys, ratio, SIZE["cluster"], data_dir, levels, label, mode)
+    for b in ready:
+        room = []
+        for line in lines:
+            if line == "name":
+                room.append(b["name"])
+            elif line == "sci":
+                room.append(b["sci"] or "")
+            elif line in _LABEL_ROOM:
+                room.append(_LABEL_ROOM[line])
+        b["label_room"] = [t for t in room if t]
+    # how big each bird is drawn: true to size (from the length table), the
+    # rarest or the busiest biggest, or all alike
+    if sizing == "rare":
+        for b in ready:
+            b["factor"] = round(1.75 - 1.0 * float(b.get("rarity_share") or 0), 2)
+    elif sizing == "busy":
+        top = max(b["count"] for b in ready) or 1
+        for b in ready:
+            b["factor"] = round(0.7 + 1.0 * (b["count"] / top) ** 0.5, 2)
+    elif sizing == "same":
+        for b in ready:
+            b["factor"] = 1.0
+    made = _sheet(
+        ready,
+        [b["key"] for b in ready],
+        ratio,
+        SIZE["cluster"],
+        data_dir,
+        levels,
+        label,
+        mode,
+        arrange,
+    )
     if not made:
         return None, notices
-    counts = {b["name"]: b["count"] for b in birds}
-    label = GEN_STYLES[style][0].split(" (")[0].lower()
+    by_name = {b["name"]: b for b in birds}
+    shown = []
+    for m in made["birds"]:
+        b = by_name.get(m["name"], {})
+        shown.append(
+            {
+                **m,
+                "count": b.get("count", 0),
+                "last": b.get("last", ""),
+                "new": bool(b.get("new")),
+                "rarity": b.get("rarity", ""),
+            }
+        )
     return {
         "sheet": True,
         "pic": {
             "src": made["src"],
             "kind": "sheet",
             "paper": made["paper"],
-            "credit": f"AI paintings, {label} (fal.ai nano-banana), after iNaturalist photos",
+            "credit": " · ".join(dict.fromkeys(credits)),
         },
-        "birds": [{**b, "count": counts.get(b["name"], 0)} for b in made["birds"]],
+        "birds": shown,
+        "lines": list(lines),
         "ratio": made["ratio"],
         "label": made["label"],
         "mode": made["mode"],
-        "waiting": [b["name"] for b in birds if not b["painted"]],
+        "waiting": [b["name"] for b in birds if not b["key"]],
+        "waiting_verb": "paint" if ai else "find a plate for",
         "montage": False,
     }, notices
 
@@ -1741,6 +1889,7 @@ def _pack_sheet(
     H: int,
     label: float = SHEET_LABEL,
     mode: str = "sheet",
+    arrange: str = "auto",
 ) -> list[tuple[int, int, float]] | None:
     """Place cut-outs on a W x H page: biggest first, a little apart, each with
     room under it for its label. Where they go depends on ``mode``:
@@ -1760,20 +1909,27 @@ def _pack_sheet(
     cell = 6
     gw, gh = W // cell, H // cell
     ys, xs = np.mgrid[0:gh, 0:gw]
+    if arrange == "auto":
+        arrange = {"wreath": "ring", "notebook": "rows"}.get(mode, "oval")
     cx, cy, rx, ry = gw / 2, gh * 0.47, gw * 0.48, gh * 0.45
-    oval = ((xs + 0.5 - cx) / rx) ** 2 + ((ys + 0.5 - cy) / ry) ** 2
-    if mode == "wreath":
+    if arrange in ("circle", "ring"):
         cy = gh / 2
-        oval = ((xs + 0.5 - cx) / rx) ** 2 + ((ys + 0.5 - cy) / ry) ** 2
+        rx = ry = min(gw * 0.48, gh * 0.47)
+        if arrange == "ring" and mode == "wreath":
+            rx, ry = gw * 0.48, gh * 0.45
+    oval = ((xs + 0.5 - cx) / rx) ** 2 + ((ys + 0.5 - cy) / ry) ** 2
+    top = 0.1 if mode == "notebook" else 0.05
+    left = 0.12 if mode == "notebook" else 0.04
+    page = (xs >= gw * left) & (xs < gw * 0.96) & (ys >= gh * top) & (ys < gh * 0.93)
+    if arrange == "ring":
         inside = (oval <= 1) & (oval >= 0.3**2)
-    elif mode == "notebook":
-        inside = (
-            (xs >= gw * 0.12) & (xs < gw * 0.97) & (ys >= gh * 0.1) & (ys < gh * 0.97)
-        )
     else:
-        inside = oval <= 1
+        # the oval and circle are soft targets: birds are placed from the
+        # middle out and pulled inward, but only the page margin is a wall,
+        # so a tall plate does not cap how big everything can be drawn
+        inside = page
     label_rows = max(2, int(label * 1.5 * H / cell))
-    gap = 2
+    gap = 1
 
     def footprint(b: dict[str, Any], scale: float) -> Any:
         m = b["mask"]
@@ -1789,32 +1945,109 @@ def _pack_sheet(
             else m.resize((tw, th))
         )
         bird = np.asarray(small) > 40
-        # the label's strip under the bird, as wide as the bird or the label
-        text = "00" if mode == "numbered" else b["name"]
-        name_w = int(len(text) * label * 0.74 * H / cell) + 3
+        # the label's strip under the bird, as wide as the bird or its
+        # longest line, as tall as its lines
+        lines = ["00"] if mode == "numbered" else (b.get("lines") or [b["name"]])
+        rows = label_rows * max(1, len(lines)) if lines else 0
+        # the first line is the name in small caps; the rest are smaller italic
+        name_w = (
+            int(
+                max(len(t) * (0.74 if i == 0 else 0.5) for i, t in enumerate(lines))
+                * label
+                * H
+                / cell
+            )
+            + 3
+            if lines
+            else 0
+        )
         fw = max(tw, name_w)
-        fp = np.zeros((th + label_rows + gap, fw), dtype=bool)
+        fp = np.zeros((th + rows + gap, fw), dtype=bool)
         off = (fw - tw) // 2
         fp[:th, off : off + tw] = bird
-        fp[
-            th + 1 : th + label_rows, (fw - name_w) // 2 : (fw - name_w) // 2 + name_w
-        ] = True
+        if lines:
+            fp[th + 1 : th + rows, (fw - name_w) // 2 : (fw - name_w) // 2 + name_w] = (
+                True
+            )
         return fp, off
+
+    seed = int(
+        hashlib.sha1("|".join(b["name"] for b in birds).encode()).hexdigest()[:8], 16
+    )
 
     def order(ty: Any, tx: Any, fh: int, fw: int) -> tuple[Any, Any]:
         """(candidate order, the distance used to stop looking)."""
-        if mode == "notebook":
-            d = ty * gw + tx
-            return np.argsort(d, axis=None), np.zeros_like(d, dtype=float)
+        flat = np.zeros(ty.shape, dtype=float)
+        if arrange == "rows":
+            return np.argsort(ty * gw + tx, axis=None, kind="stable"), flat
+        if arrange == "scatter":
+            # a steady shuffle, so the page does not jump between refreshes
+            return np.random.default_rng(seed).permutation(ty.size), flat
+        if arrange == "heap":
+            # the biggest settle at the bottom middle, the rest pile on top
+            d = ((tx + fw / 2 - cx) / (gw * 0.6)) ** 2 + (
+                (gh * 0.93 - (ty + fh)) / gh
+            ) ** 2
+            return np.argsort(d, axis=None), flat
         d = ((tx + fw / 2 - cx) / rx) ** 2 + ((ty + fh / 2 - cy) / ry) ** 2
-        if mode == "wreath":
+        if arrange == "ring":
             # nearest the ring's line (65% of the way out), not the middle
             return np.argsort(np.abs(np.sqrt(d) - 0.65), axis=None), d
         return np.argsort(d, axis=None), d
 
+    def pull(x: int, y: int, fh: int, fw: int) -> tuple[int, int]:
+        """Which way this bird wants to move, as a unit step, or (0, 0)."""
+        bx, by = x + fw / 2, y + fh / 2
+        if arrange == "rows":
+            return (-1 if bx > gw * 0.14 else 0, -1 if by > gh * (top + 0.05) else 0)
+        if arrange == "heap":
+            return (int(np.sign(cx - bx)) if abs(cx - bx) > 2 else 0, 1)
+        if arrange == "ring":
+            # toward the ring's line, not the middle
+            r = (((bx - cx) / rx) ** 2 + ((by - cy) / ry) ** 2) ** 0.5
+            if abs(r - 0.65) < 0.03:
+                return (0, 0)
+            d = -1 if r > 0.65 else 1
+            return (int(np.sign(bx - cx)) * d, int(np.sign(by - cy)) * d)
+        return (
+            int(np.sign(cx - bx)) if abs(cx - bx) > 2 else 0,
+            int(np.sign(cy - by)) if abs(cy - by) > 2 else 0,
+        )
+
+    def compact(occ: Any, placed: list[Any]) -> None:
+        """Nudge every bird one cell at a time toward where it is pulled,
+        while the move keeps it clear of the others and inside the page,
+        until nothing moves: the loose first packing becomes a tight group,
+        like birds cut from plates and pasted close together."""
+        for _ in range(600):
+            moved = False
+            for i in range(len(placed) - 1, -1, -1):
+                y, x, fp, off, scale = placed[i]
+                fh, fw = fp.shape
+                dx, dy = pull(x, y, fh, fw)
+                if not dx and not dy:
+                    continue
+                occ[y : y + fh, x : x + fw] &= ~fp
+                for sx, sy in ((dx, dy), (dx, 0), (0, dy)):
+                    if not sx and not sy:
+                        continue
+                    nx, ny = x + sx, y + sy
+                    if nx < 0 or ny < 0 or nx + fw > gw or ny + fh > gh:
+                        continue
+                    if (occ[ny : ny + fh, nx : nx + fw] & fp).any():
+                        continue
+                    if not inside[ny : ny + fh, nx : nx + fw][fp].all():
+                        continue
+                    x, y, moved = nx, ny, True
+                    break
+                occ[y : y + fh, x : x + fw] |= fp
+                placed[i] = (y, x, fp, off, scale)
+            if not moved:
+                break
+
     def attempt(unit: float) -> list[tuple[int, int, float]] | None:
         occ = np.zeros((gh, gw), dtype=bool)
-        placed: list[tuple[int, int, float]] = []
+        placed: list[Any] = []
         for b in birds:
             scale = unit * b["factor"]
             fp, off = footprint(b, scale)
@@ -1825,7 +2058,7 @@ def _pack_sheet(
             ranked, d = order(ty, tx, fh, fw)
             spot = None
             for k in ranked:
-                if mode in ("sheet", "numbered") and d.flat[k] > 1.2:
+                if arrange in ("oval", "circle") and d.flat[k] > 2.2:
                     break
                 y, x = int(ty.flat[k]), int(tx.flat[k])
                 if (occ[y : y + fh, x : x + fw] & fp).any():
@@ -1838,8 +2071,11 @@ def _pack_sheet(
                 return None
             y, x = spot
             occ[y : y + fh, x : x + fw] |= fp
-            placed.append(((x + off) * cell, y * cell, scale))
-        return placed
+            placed.append((y, x, fp, off, scale))
+            # close up after each bird, so the next finds room nearer the middle
+            if arrange != "scatter":
+                compact(occ, placed)
+        return [((x + off) * cell, y * cell, scale) for y, x, _fp, off, scale in placed]
 
     area = sum((b["mask"].width * b["mask"].height) * b["factor"] ** 2 for b in birds)
     room = float(inside.sum()) * cell * cell
@@ -1852,11 +2088,11 @@ def _pack_sheet(
         unit *= 0.88
     if not best:
         return [(0, 0, 0.0)] * len(birds)
-    for _ in range(9):  # then grow while it still fits, to fill the page
-        bigger = attempt(unit * 1.07)
+    for _ in range(16):  # then grow while it still fits, to fill the page
+        bigger = attempt(unit * 1.05)
         if not bigger:
             break
-        unit, best = unit * 1.07, bigger
+        unit, best = unit * 1.05, bigger
     return best
 
 
@@ -1886,6 +2122,7 @@ def _build_sheet(
     folder: Path,
     tag: str,
     mode: str = "sheet",
+    arrange: str = "auto",
 ) -> None:
     """Make the cluster page under ``tag`` in the look ``mode`` (slow: run it
     in a thread). Paper looks (sheet, numbered, wreath) multiply the cut-outs
@@ -1911,8 +2148,9 @@ def _build_sheet(
                         "cut": cut,
                         "mask": mask,
                         "paper": paper,
-                        "factor": _size_factor(r["sci"], lengths),
+                        "factor": r.get("factor") or _size_factor(r["sci"], lengths),
                         "rot": _rot_of(r["name"], mode),
+                        "lines": r.get("label_room"),
                     }
                 )
     if not birds:
@@ -1935,7 +2173,8 @@ def _build_sheet(
                 width=line,
             )
         # one scale for all, so they stay true to size against each other
-        tag_h = label * 2.6 * H
+        n_lines = max((len(b.get("lines") or [1]) for b in birds), default=1)
+        tag_h = label * (1.4 * n_lines + 1.2) * H
         unit = min(
             min((w * 0.84) / b["cut"].width, (h - tag_h) * 0.84 / b["cut"].height)
             / b["factor"]
@@ -1952,7 +2191,7 @@ def _build_sheet(
             ((x + w / 2) / W, (y + h - tag_h * 0.95) / H) for x, y, w, h in cells
         ]
     else:
-        spots = _pack_sheet(birds, W, H, label, mode)
+        spots = _pack_sheet(birds, W, H, label, mode, arrange)
         if spots is None:
             return
         sheet = Image.new("RGB", (W, H), avg if mode != "notebook" else (246, 239, 219))
@@ -2027,6 +2266,7 @@ def _build_sheet(
         "ratio": round(ratio, 3),
         "label": label,
         "mode": mode,
+        "arrange": arrange,
     }
     _write(info_path, json.dumps(info).encode())
     with contextlib.suppress(OSError):
@@ -2047,6 +2287,7 @@ def _sheet(
     levels: str,
     label: float = SHEET_LABEL,
     mode: str = "sheet",
+    arrange: str = "auto",
 ) -> dict[str, Any] | None:
     """Today's painted birds as a specimen sheet: each painting cut out and
     printed on one page in an oval cluster, true to size against each
@@ -2059,9 +2300,15 @@ def _sheet(
             stamps.append(f"{k}:{int((folder / f'{k}.jpg').stat().st_mtime)}")
     if len(stamps) != len(keys) or not keys:
         return None
-    names = "|".join(r["name"] for r in rows)
+    names = "|".join(
+        r["name"]
+        + "/"
+        + "/".join(r.get("label_room") or [])
+        + f"/{r.get('factor') or 0:.2f}"
+        for r in rows
+    )
     tag = hashlib.sha1(
-        f"{'|'.join(stamps)}|{ratio:.3f}|{size}|{names}|{label:.4f}|{mode}|{SHEET_LAYOUT}".encode()
+        f"{'|'.join(stamps)}|{ratio:.3f}|{size}|{names}|{label:.4f}|{mode}|{arrange}|{SHEET_LAYOUT}".encode()
     ).hexdigest()[:16]
     sheet_path, info_path = folder / f"sheet_{tag}.jpg", folder / f"sheet_{tag}.json"
     info = _read_json(info_path, None)
@@ -2077,7 +2324,9 @@ def _sheet(
 
             def run() -> None:
                 try:
-                    _build_sheet(rows, keys, ratio, size, label, folder, tag, mode)
+                    _build_sheet(
+                        rows, keys, ratio, size, label, folder, tag, mode, arrange
+                    )
                 finally:
                     with _PAINTING_LOCK:
                         _PAINTING.discard(job)
@@ -2092,6 +2341,7 @@ def _sheet(
                     and abs(float(old.get("ratio") or 0) - round(ratio, 3)) < 0.01
                     and abs(float(old.get("label") or 0) - label) < 1e-4
                     and old.get("mode", "sheet") == mode
+                    and old.get("arrange", "auto") == arrange
                     and f.with_suffix(".jpg").exists()
                 ):
                     older.append((f.stat().st_mtime, f, old))
@@ -2164,6 +2414,14 @@ def fetch(
     _CAP.set(_daily_cap(settings))
     art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
     cluster_style = _choice(options.get("cluster_style"), CLUSTER_STYLES)
+    picked = options.get("cluster_labels")
+    if isinstance(picked, str):
+        picked = [v.strip() for v in picked.split(",") if v.strip()]
+    if not isinstance(picked, list):
+        picked = ["name"]
+    cluster_lines = tuple(v for v in LABEL_LINES if v in picked)
+    cluster_arrange = _choice(options.get("cluster_arrange"), ARRANGEMENTS)
+    cluster_sizing = _choice(options.get("cluster_sizing"), SIZINGS)
     cluster_n = _int(
         options.get("cluster_size"),
         4 if cluster_style == "blend" else 12,
@@ -2208,6 +2466,11 @@ def fetch(
                 cache.write_text(json.dumps(raw), encoding="utf-8")
 
     species = [dict(s) for s in raw.get("species", [])]
+    rarity = _rarity(data_dir, species, now.strftime("%Y-%m-%d")) if species else {}
+    for s_ in species:
+        s_["rarity"], s_["rarity_share"] = rarity.get(
+            s_.get("sci") or s_["name"], ("", 0.0)
+        )
     if sort == "count":
         species.sort(key=lambda s: (-s["count"], -(_minutes(s["last"]) or 0)))
     else:
@@ -2250,7 +2513,7 @@ def fetch(
             art_style,
         )
     elif layout == "cluster" and species:
-        if cluster_style != "blend" and pictures in ("plate_gen", "gen"):
+        if cluster_style != "blend" and pictures in ("plate_gen", "gen", "plate_photo"):
             ratio = cw / ch if cw and ch else 4 / 3
             if cluster_style == "numbered":
                 # the numbered plate shares the cell with its key
@@ -2267,6 +2530,10 @@ def fetch(
                 levels,
                 label_size,
                 cluster_style,
+                pictures,
+                cluster_lines,
+                cluster_arrange,
+                cluster_sizing,
             )
         if cluster is None:
             cluster, more = _cluster(

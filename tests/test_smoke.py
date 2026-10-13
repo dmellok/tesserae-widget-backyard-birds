@@ -656,13 +656,14 @@ def test_specimen_sheet_prints_each_painted_bird(tmp_path, offline):
     assert len(c["birds"]) == 4 and abs(c["ratio"] - 800 / 480) < 0.02
     # four paintings, no blend: the sheet costs nothing more
     assert len(offline.bodies) == 4
+    # boxes may overlap (the packing is tight: shapes touch, boxes cross),
+    # but every bird is on the page and the group fills a good part of it
     boxes = [b["box"] for b in c["birds"]]
-    for i, (x, y, w, h) in enumerate(boxes):
+    for x, y, w, h in boxes:
         assert 0 <= x and 0 <= y and x + w <= 1 and y + h <= 1
-        for x2, y2, w2, h2 in boxes[i + 1 :]:
-            assert x + w <= x2 or x2 + w2 <= x or y + h <= y2 or y2 + h2 <= y, (
-                "birds overlap"
-            )
+    span_w = max(x + w for x, y, w, h in boxes) - min(x for x, y, w, h in boxes)
+    span_h = max(y + h for x, y, w, h in boxes) - min(y for x, y, w, h in boxes)
+    assert span_w > 0.45 and span_h > 0.45, (span_w, span_h)
     assert c["label"] >= 13 / 480 - 1e-9, "names at least 13 px on the panel"
 
 

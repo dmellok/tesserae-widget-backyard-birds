@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -373,13 +373,9 @@
       "label": "Cluster: style",
       "default": "sheet",
       "show_if": {
-        "layout": "cluster",
-        "pictures": [
-          "plate_gen",
-          "gen"
-        ]
+        "layout": "cluster"
       },
-      "help": "Only used by the cluster layout with an AI option. The first five print each bird's own painting on one page, at no cost beyond the paintings: a specimen sheet named underneath, a numbered plate with a key, a wreath round a title, a field notebook with taped-in birds, or a specimen drawer with museum tags. Blended scene repaints up to six birds together with one more AI pass.",
+      "help": "The first five print every bird on one page at no cost beyond the pictures: with classic plates they are cut from the plates, no fal needed; with an AI option from each bird's own painting. Blended scene repaints up to six birds together with one more AI pass.",
       "choices": [
         {
           "value": "sheet",
@@ -464,11 +460,133 @@
       ]
     },
     {
+      "name": "cluster_arrange",
+      "type": "select",
+      "label": "Cluster: arrangement",
+      "default": "auto",
+      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the specimen drawer always uses its compartments.",
+      "choices": [
+        {
+          "value": "auto",
+          "label": "The look's own"
+        },
+        {
+          "value": "oval",
+          "label": "Oval, biggest in the middle"
+        },
+        {
+          "value": "circle",
+          "label": "Circle"
+        },
+        {
+          "value": "ring",
+          "label": "Ring round an empty middle"
+        },
+        {
+          "value": "rows",
+          "label": "Rows, top left first"
+        },
+        {
+          "value": "scatter",
+          "label": "Scattered"
+        },
+        {
+          "value": "heap",
+          "label": "Heap, biggest at the bottom"
+        }
+      ],
+      "show_if": {
+        "layout": "cluster",
+        "cluster_style": [
+          "sheet",
+          "numbered",
+          "wreath",
+          "notebook"
+        ]
+      }
+    },
+    {
+      "name": "cluster_sizing",
+      "type": "select",
+      "label": "Cluster: bird size",
+      "default": "true",
+      "help": "True size uses a table of body lengths, so a crow is bigger than a wren. Rarest biggest uses the widget's own log of the days each bird was heard in your garden; it settles after about a week.",
+      "choices": [
+        {
+          "value": "true",
+          "label": "True to size"
+        },
+        {
+          "value": "rare",
+          "label": "Rarest biggest"
+        },
+        {
+          "value": "busy",
+          "label": "Most calls biggest"
+        },
+        {
+          "value": "same",
+          "label": "All the same"
+        }
+      ],
+      "show_if": {
+        "layout": "cluster",
+        "cluster_style": {
+          "not": "blend"
+        }
+      }
+    },
+    {
+      "name": "cluster_labels",
+      "type": "multiselect",
+      "label": "Cluster: text under each bird",
+      "default": [
+        "name"
+      ],
+      "help": "Printed over the page, not into the picture, in this order. Rarity is how often the bird has been heard in your garden over the last 30 days, from the widget's own log. New is BirdNET-Go's new-species flag.",
+      "choices": [
+        {
+          "value": "name",
+          "label": "Name"
+        },
+        {
+          "value": "sci",
+          "label": "Scientific name"
+        },
+        {
+          "value": "count",
+          "label": "Calls today"
+        },
+        {
+          "value": "last",
+          "label": "Last heard"
+        },
+        {
+          "value": "rarity",
+          "label": "Rarity in your garden"
+        },
+        {
+          "value": "new",
+          "label": "New species"
+        }
+      ],
+      "show_if": {
+        "layout": "cluster",
+        "cluster_style": [
+          "sheet",
+          "wreath",
+          "notebook",
+          "drawer"
+        ]
+      }
+    },
+    {
       "name": "cluster_every",
       "type": "select",
       "label": "Cluster: re-blend at most (blended scene)",
       "default": "3",
       "show_if": {
+        "layout": "cluster",
         "cluster_style": "blend"
       },
       "help": "Only used by the cluster layout with an AI option. Each bird is painted on its own and kept; the paintings are then blended into one picture by one more AI pass (about US$0.04). When today's busiest birds change, the picture is blended again at most this often.",
@@ -532,9 +650,13 @@
         }
       ],
       "show_if": {
-        "layout": {
-          "not": "chart"
-        }
+        "layout": [
+          "list",
+          "latest",
+          "gallery",
+          "chart",
+          "plate"
+        ]
       }
     },
     {
@@ -590,7 +712,16 @@
           "value": "12",
           "label": "12"
         }
-      ]
+      ],
+      "show_if": {
+        "layout": [
+          "list",
+          "latest",
+          "gallery",
+          "chart",
+          "plate"
+        ]
+      }
     },
     {
       "name": "min_confidence",

@@ -340,14 +340,28 @@ function bleed(d, showSci, tone, caption) {
 function sheet(d, C) {
   const mode = C.mode || 'sheet';
   const birds = C.birds || [];
+  const lines = C.lines || ['name'];
+  /* the text under a bird is HTML over the picture, never baked into it,
+     built from the lines the cell asks for */
+  const labelOf = (b) => lines.map((l) => {
+    if (l === 'name') return `<span class="sh-ln">${esc(b.name)}</span>`;
+    if (l === 'sci') return b.sci ? `<span class="sh-ln sh-sci">${esc(b.sci)}</span>` : '';
+    if (l === 'count') return `<span class="sh-ln sh-sm">${b.count} call${b.count === 1 ? '' : 's'} to-day</span>`;
+    if (l === 'last') return b.last ? `<span class="sh-ln sh-sm">last heard ${esc(b.last)}</span>` : '';
+    if (l === 'rarity') return b.rarity ? `<span class="sh-ln sh-sm">${esc(b.rarity)}</span>` : '';
+    if (l === 'new') return b.new ? '<span class="sh-ln"><span class="sh-new">new</span></span>' : '';
+    return '';
+  }).join('');
   const labels = birds.map((b, i) => {
     const [x, y] = b.at || [b.box[0] + b.box[2] / 2, b.box[1] + b.box[3]];
-    const text = mode === 'numbered' ? String(i + 1) : esc(b.name);
+    const text = mode === 'numbered' ? String(i + 1) : labelOf(b);
+    if (!text) return '';
     const rot = mode === 'notebook' && b.rot ? `;transform:translate(-50%, 15%) rotate(${-b.rot}deg)` : '';
     return `<span class="sh-l" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%${rot}">${text}</span>`;
   }).join('');
   const waiting = (C.waiting || []).length;
-  const line = `${esc(d.label)} · heard to-day · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to paint` : ''}`;
+  const verb = C.waiting_verb || 'paint';
+  const line = `${esc(d.label)} · heard to-day · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to ${verb}` : ''}`;
   let extra = `<div class="sh-c">${line}</div>`;
   if (mode === 'wreath') {
     extra = `<div class="sh-w"><div class="sh-wk">${esc(d.label)}</div><div class="sh-wt">Heard to-day</div>
@@ -882,7 +896,12 @@ export default function render(shadow, ctx) {
       /* specimen sheet: the whole cell is the page */
       .sh { flex: 1; min-height: 0; display: flex; container-type: size; }
       .sh-s { container-type: size; color: #2a2116; }
-      .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; line-height: 1; }
+      .sh-ln { display: block; }
+      .sh-sci { font-family: 'IM Fell English', Georgia, serif; font-style: italic; letter-spacing: 0; }
+      .sh-sm { font-family: 'IM Fell English', Georgia, serif; font-style: italic; letter-spacing: 0; font-size: .85em; opacity: .85; }
+      .sh-new { display: inline-block; background: var(--alert, #c8281e); color: #fff; font-family: 'IM Fell English SC', Georgia, serif; padding: .05em .4em .1em; margin-top: .15em; font-size: .85em; }
+      .lv-gray16 .sh-new, .lv-gray4 .sh-new, .lv-mono .sh-new { background: #000; }
+      .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; text-align: center; line-height: 1.15; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; }
       .sh-c { position: absolute; left: 0; right: 0; bottom: 1.6%; text-align: center; font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: calc(var(--lf) * 100cqh); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sh-numbered .sh-l { font-family: 'IM Fell English', Georgia, serif; font-size: calc(var(--lf) * 170cqh); }
       @container (max-aspect-ratio: 1) {

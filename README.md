@@ -63,7 +63,11 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 
 ### The cluster layout
 
-The cluster shows the day's busiest birds on one page, in one of two **Cluster styles**. Both need an AI picture option; until a bird is painted, and with AI painting off, the cluster is a numbered montage of the birds' own plates and photos.
+The cluster shows the day's busiest birds on one page. With classic plates on, the birds are cut from their plates, with no fal.ai needed; birds without a plate wait (or use a painting kept from before). With an AI picture option each bird is its own AI painting. Until any bird has a picture, the cluster is a numbered montage.
+
+Three options shape the page. **Arrangement**: the look's own, an oval with the biggest in the middle, a circle, a ring round an empty middle, rows, scattered, or a heap with the biggest at the bottom. The birds are packed from the middle out and then pulled together until they touch, so the page reads as one tight group. **Bird size**: true to size from the bundled length table, rarest biggest, most calls biggest, or all the same. **Text under each bird**: any of name, scientific name, calls today, last heard, rarity in your garden, and a new-species mark, printed over the page rather than into the picture. Rarity comes from a log the widget keeps of the days each bird was heard; it settles after about a week and then reads first visit, rare here, occasional, regular or daily visitor.
+
+Options that do not apply to the current setup are hidden in the editor (Tesserae 0.452 or later).
 
 **Specimen sheet** (the default) is a page from a field guide: each bird's own AI painting is cut out and printed on one sheet, packed into an oval with the biggest bird in the middle, roughly true to size against each other (from a bundled table of body lengths for common garden birds), each named underneath. It shows up to 24 birds (**Cluster: how many birds**), costs nothing beyond the birds' own paintings, and fills in as they are painted, one per refresh. Building a page takes a few seconds, so it happens in the background and the previous page shows meanwhile.
 
