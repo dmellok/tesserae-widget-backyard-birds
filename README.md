@@ -87,7 +87,9 @@ The widget has its own page under **Widgets → Backyard Birds** (`/plugins/back
 - **Use instead of the classic plate**, so a painting you like wins over the bird's plate, even with the plain "Classic plates, photos" option.
 - **Paint a bird** now, by scientific name and in any art style, to compare a painting with its plate before choosing.
 - See the cluster's blended pictures, one per art style, and delete one to have the widget blend the current birds again.
-- See today's count against the daily limit, and why a painting failed, with a button to let the widget try again.
+- Open any painting full size in a pop-up.
+- Filter by art style, tick paintings (or select all shown) and delete them together, or delete every painting in a style at once. Bulk deletes move the paintings into earlier versions, so the birds are painted again as they are shown and nothing is lost.
+- See today's count against the daily limit, reset it to carry on painting today, and see why a painting failed, with a button to let the widget try again.
 
 A kept painting is also used for a bird without a plate whenever classic plates are on, so turning the AI option off does not throw the paintings away.
 

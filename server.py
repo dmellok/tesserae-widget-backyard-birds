@@ -2541,6 +2541,57 @@ def blueprint() -> Any:
         )
         return back()
 
+    def retire(keys: list[str]) -> int:
+        """Move these paintings into their earlier versions, so the widget
+        paints the birds again the next time they are shown."""
+        folder = _gen_dir(data_dir())
+        done = 0
+        for key in keys:
+            if not _SLUG_RE.fullmatch(key) or not (folder / f"{key}.jpg").exists():
+                continue
+            _archive(folder, key)
+            with contextlib.suppress(OSError):
+                (folder / f"{key}.err").unlink()
+            done += 1
+        return done
+
+    def retired(n: int) -> None:
+        if n:
+            flash(
+                f"{n} painting{'' if n == 1 else 's'} moved to earlier versions. "
+                "The widget paints them again as the birds are shown, within the daily limit.",
+                "success",
+            )
+        else:
+            flash("No paintings were selected.", "info")
+
+    @bp.post("/budget-reset")
+    def budget_reset() -> Any:
+        _write(
+            _gen_dir(data_dir()) / "budget.json",
+            json.dumps({time.strftime("%Y-%m-%d"): 0}).encode(),
+        )
+        flash("Today's count is back to 0.", "success")
+        return back()
+
+    @bp.post("/bulk-delete")
+    def bulk_delete() -> Any:
+        retired(retire(request.form.getlist("keys")))
+        return back()
+
+    @bp.post("/style-delete")
+    def style_delete() -> Any:
+        style = request.form.get("art", "")
+        if style not in GEN_STYLES:
+            abort(400)
+        keys = [
+            e["slug"]
+            for e in _gallery(data_dir())["birds"]
+            if e["style"] == style and e["active"]
+        ]
+        retired(retire(keys))
+        return back()
+
     @bp.post("/<slug>/prefer")
     def prefer(slug: str) -> Any:
         slug = slug_or_404(slug)

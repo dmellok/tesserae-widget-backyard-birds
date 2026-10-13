@@ -11,11 +11,17 @@
 <section class="card">
   {{ card_head('Paint a bird', icon_name='paint-brush', level=2,
                blurb='Paints one bird now, from an openly licensed iNaturalist photo, at about US$0.04. Useful for a bird that has a classic plate, so you can compare the two and choose.') }}
-  <p class="bb-budget">
+  <div class="bb-budget">
     {{ g.used }} of {{ g.cap }} paintings used today.
+    {% if g.used %}
+    <form method="post" action="{{ url_for('backyard_birds_admin.budget_reset') }}" class="bb-inline"
+          onsubmit="return confirm('Reset today\'s count to 0? The widget can then make up to {{ g.cap }} more paintings today, at about US$0.04 each.');">
+      <button type="submit" class="ghost bb-link">Reset today's count</button>
+    </form>
+    {% endif %}
     {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
     {% if g.running %}Painting now: {{ g.running|join(', ')|replace('_', ' ') }}. Reload in a minute.{% endif %}
-  </p>
+  </div>
   <form method="post" action="{{ url_for('backyard_birds_admin.paint') }}" class="form bb-paint">
     <div class="field">
       <label for="bb-sci">Bird</label>
@@ -42,11 +48,35 @@
 <section class="card">
   {{ card_head('Paintings', icon_name='images', level=2) }}
   {% if g.birds %}
+  {% set present = g.birds|selectattr('active')|map(attribute='style')|unique|list %}
+  <div class="bb-tools">
+    <div class="bb-filter" role="group" aria-label="Show paintings in a style">
+      <button type="button" class="bb-chip on" data-style="">All</button>
+      {% for value, label in g.styles if value in present %}
+      <button type="button" class="bb-chip" data-style="{{ value }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <form id="bb-bulk" method="post" action="{{ url_for('backyard_birds_admin.bulk_delete') }}" class="bb-bulk"
+          onsubmit="return confirm('Move the selected paintings to earlier versions? The widget paints these birds again as they are shown.');">
+      <label class="bb-check"><input type="checkbox" id="bb-all"> Select all shown</label>
+      <button type="submit" class="ghost danger" id="bb-del" disabled><i class="ph ph-trash" aria-hidden="true"></i> Delete selected <span id="bb-n"></span></button>
+    </form>
+    {% if present %}
+    <form method="post" action="{{ url_for('backyard_birds_admin.style_delete') }}" class="bb-bulk"
+          onsubmit="return confirm('Move every painting in ' + this.elements.art.options[this.elements.art.selectedIndex].text + ' to earlier versions? The widget paints them again as the birds are shown, within the daily limit.');">
+      <select name="art" aria-label="Art style">
+        {% for value, label in g.styles if value in present %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="ghost danger"><i class="ph ph-trash" aria-hidden="true"></i> Delete every painting in this style</button>
+    </form>
+    {% endif %}
+  </div>
   <div class="bb-grid">
     {% for b in g.birds %}
-    <article class="bb-bird">
+    <article class="bb-bird" data-style="{{ b.style }}">
       <header class="bb-bird-head">
-        <div>
+        {% if b.active %}<input type="checkbox" class="bb-pick" name="keys" value="{{ b.slug }}" form="bb-bulk" aria-label="Select {{ b.name }}, {{ b.style_label }}">{% endif %}
+        <div class="bb-title">
           <h3>{{ b.name }}</h3>
           {% if b.cluster %}<i>{{ b.birds|map(attribute='name')|join(', ') }}</i>{% elif b.sci %}<i>{{ b.sci }}</i>{% endif %}
           <span class="bb-style">{{ b.style_label }}</span>
@@ -54,7 +84,7 @@
         {% if b.painting %}<span class="bb-tag">painting…</span>{% endif %}
       </header>
       {% if b.active %}
-      <a href="{{ url_for('backyard_birds_admin.image', name=b.active.file) }}" target="_blank" rel="noopener" class="bb-main">
+      <a href="{{ url_for('backyard_birds_admin.image', name=b.active.file) }}" data-lightbox aria-label="{{ b.name }}, {{ b.style_label }}" class="bb-main">
         <img src="{{ url_for('backyard_birds_admin.image', name=b.active.file) }}" alt="{{ b.name }}" loading="lazy">
       </a>
       <p class="bb-meta">Made {{ b.active.made }} · {{ b.active.credit }}</p>
@@ -98,7 +128,7 @@
         <div class="bb-archive-grid">
           {% for a in b.archive %}
           <figure>
-            <a href="{{ url_for('backyard_birds_admin.image', name='archive/' ~ a.file) }}" target="_blank" rel="noopener">
+            <a href="{{ url_for('backyard_birds_admin.image', name='archive/' ~ a.file) }}" data-lightbox aria-label="{{ b.name }}, {{ a.made }}">
               <img src="{{ url_for('backyard_birds_admin.image', name='archive/' ~ a.file) }}" alt="{{ b.name }}, {{ a.made }}" loading="lazy">
             </a>
             <figcaption>
@@ -125,7 +155,53 @@
   {% endif %}
 </section>
 
+<script>
+  (function () {
+    const chips = document.querySelectorAll('.bb-chip');
+    const cards = document.querySelectorAll('.bb-bird');
+    const all = document.getElementById('bb-all');
+    const del = document.getElementById('bb-del');
+    const n = document.getElementById('bb-n');
+    if (!all) return;
+    const shown = () => [...cards].filter((c) => !c.hidden);
+    const count = () => {
+      const k = document.querySelectorAll('.bb-pick:checked').length;
+      del.disabled = !k;
+      n.textContent = k ? `(${k})` : '';
+      const picks = shown().map((c) => c.querySelector('.bb-pick')).filter(Boolean);
+      all.checked = picks.length > 0 && picks.every((p) => p.checked);
+    };
+    chips.forEach((chip) => chip.addEventListener('click', () => {
+      chips.forEach((c) => c.classList.toggle('on', c === chip));
+      cards.forEach((card) => {
+        card.hidden = !!chip.dataset.style && card.dataset.style !== chip.dataset.style;
+        // a hidden card is never part of a bulk delete
+        const pick = card.querySelector('.bb-pick');
+        if (card.hidden && pick) pick.checked = false;
+      });
+      count();
+    }));
+    all.addEventListener('change', () => {
+      shown().forEach((c) => { const p = c.querySelector('.bb-pick'); if (p) p.checked = all.checked; });
+      count();
+    });
+    document.addEventListener('change', (ev) => { if (ev.target.classList.contains('bb-pick')) count(); });
+    count();
+  })();
+</script>
+
 <style>
+  .bb-inline { display: inline; margin: 0; }
+  .bb-link { padding: 0 4px; font-size: inherit; text-decoration: underline; }
+  .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
+  .bb-filter { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }
+  .bb-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--t-border); background: var(--t-surface); color: var(--t-fg-soft); cursor: pointer; }
+  .bb-chip.on { background: var(--t-fg, #111); color: var(--t-surface, #fff); border-color: transparent; }
+  .bb-bulk { display: flex; gap: 8px; align-items: center; margin: 0; flex-wrap: wrap; }
+  .bb-bulk select { min-width: 12em; }
+  .bb-bird[hidden] { display: none; }
+  .bb-title { flex: 1; min-width: 0; }
+  .bb-pick { margin-top: 3px; width: 16px; height: 16px; }
   .bb-budget { margin: 0 0 12px; color: var(--t-fg-soft); }
   .bb-paint { display: grid; grid-template-columns: 2fr 2fr 1.4fr auto; gap: 12px; align-items: start; }
   .bb-paint .field { margin: 0; }
