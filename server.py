@@ -938,8 +938,118 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
         "Pirate",
         "a realistic hand-coloured lithograph in the manner of John Gould on warm cream paper, except that the bird is a pirate with an eye patch, a small tricorn hat and a cross scowl",
     ),
+    "artsandcrafts": (
+        "Arts and Crafts (Morris)",
+        "an Arts and Crafts illustration in the manner of William Morris: the bird set among dense, repeating stylised foliage and flowers like a wallpaper or tapestry panel, flat muted earth, olive and indigo colours with a firm dark outline, on plain unbleached paper",
+    ),
+    "jugendstil": (
+        "Jugendstil",
+        "a Jugendstil illustration, the German Art Nouveau: squarer, more geometric ornament, a bold even outline, flat areas of muted colour, the bird framed in a decorative cartouche of stylised leaves, on plain cream paper",
+    ),
+    "glasgow": (
+        "Glasgow style",
+        "a Glasgow style illustration in the manner of Charles Rennie Mackintosh and the Macdonald sisters: a tall elongated composition, stylised roses and fine grids, pale washed colours with a few strong dark lines and a great deal of empty space, on plain pale paper",
+    ),
+    "secession": (
+        "Vienna Secession",
+        "a Vienna Secession illustration in the manner of Klimt and Moser: the bird's plumage true to life but its surroundings made of flat decorative shapes, gold, black and jewel colours, mosaic-like patterned areas, spirals and squares, on plain cream paper",
+    ),
+    "deco": (
+        "Art Deco",
+        "an Art Deco illustration: stepped geometry, sunbursts and fans, the bird simplified into clean curves and chevrons, a palette of gold, black, teal and cream with flat colour and crisp edges, on plain cream paper",
+    ),
+    "fairytale": (
+        "Golden Age fairy-tale plate",
+        "a Golden Age illustration in the manner of Arthur Rackham and Edmund Dulac: fine ink line with soft muted watercolour wash, gnarled branches and twisted roots as a frame, a faintly magical atmosphere, on plain toned paper",
+    ),
+    "mucha": (
+        "Mucha poster",
+        "an Art Nouveau poster in the manner of Alphonse Mucha: the bird in a halo roundel, a flowing ornamental border, pastel flat colour with a crisp dark outline, and empty panels where lettering would go, on plain cream paper",
+    ),
+    "beardsley": (
+        "Beardsley ink",
+        "a black-and-white ink illustration in the manner of Aubrey Beardsley: bold sweeping lines, large flat black masses against white, ornamental dots and fine hatching, no colour at all, on plain white paper",
+    ),
+    "nouveauglass": (
+        "Nouveau stained window",
+        "a Tiffany-style Art Nouveau stained-glass window of the bird: leaded curving lines around pieces of opalescent coloured glass, wisteria and dragonfly ornament, soft light through the glass, on a plain pale background",
+    ),
+    "japonisme": (
+        "Japonisme",
+        "a Japonisme illustration, Western Art Nouveau borrowing from ukiyo-e: a flat bird on a branch, an asymmetric composition with an ornamented border and a small seal-like roundel, soft flat colours and a fine keyline, on plain cream paper",
+    ),
+    "chinoiserie": (
+        "Chinoiserie",
+        "a hand-painted chinoiserie wallpaper panel: the bird on a flowering branch with delicate blossom and butterflies, soft flat colours on a pale ground, fine brushwork, on plain pale paper",
+    ),
+    "persian": (
+        "Persian miniature",
+        "a Persian miniature painting: flat jewel colours, gold leaf, flattened perspective, the bird among tulips and stylised flowers under a patterned sky, with a gold and blue illuminated border, on plain cream paper",
+    ),
+    "bestiary": (
+        "Medieval bestiary",
+        "a page from a medieval bestiary: the bird painted in red, blue and green tempera with gold leaf on a vellum ground, drawn as a manuscript illuminator would, with a vine and acanthus border, no text",
+    ),
+    "byzantine": (
+        "Byzantine icon",
+        "a Byzantine icon panel of the bird: a burnished gold ground, a formal frontal pose with a halo-like circle behind the head, deep reds and blues in egg tempera, fine gold lines in the feathers",
+    ),
+    "folkart": (
+        "Folk art",
+        "a folk-art painting of the bird in the manner of Pennsylvania Dutch fraktur and Scandinavian rosemaling: symmetric scrolls, hearts and tulips, flat bright colours with a dark outline, on plain cream paper",
+    ),
+    "harper": (
+        "Mid-century modern (Harper)",
+        "a mid-century modern illustration in the manner of Charley Harper: the bird reduced to circles, triangles and clean geometric shapes, flat colour in a handful of tones, no outlines, true to the species' markings, on plain cream paper",
+    ),
+    "cigarette": (
+        "Edwardian cigarette card",
+        "an Edwardian cigarette card chromolithograph of the bird: a small framed picture with a decorative border, slightly faded printed inks, fine detail, and a blank panel below for the name, on plain cream card",
+    ),
+    "delft": (
+        "Delft tile",
+        "a Dutch Delft tile painting of the bird: cobalt blue on white tin-glazed earthenware, the bird in a tiled square with corner ornaments, brushy blue washes and a fine crackle in the glaze",
+    ),
 }
-GEN_STYLE_IDS = tuple(GEN_STYLES)
+# "custom" is the owner's own prompt (the art_prompt option), painted under a
+# tag made from the prompt's words so each prompt keeps its own paintings.
+GEN_STYLE_IDS = (*GEN_STYLES, "custom")
+CUSTOM_EXAMPLE = (
+    "an Art Nouveau illustration with sinuous flowing lines, a muted palette of "
+    "sage, ochre and dusty rose, and a border of curling leaves and lilies, on "
+    "plain cream paper"
+)
+_CUSTOM_RE = re.compile(r"custom[a-z]{8}")
+_CUSTOM: contextvars.ContextVar[dict[str, tuple[str, str]] | None] = (
+    contextvars.ContextVar("bb_custom", default=None)
+)
+
+
+def _custom_tag(how: str) -> str:
+    """The style tag for a custom prompt: 'custom' and eight letters from its
+    words, so the same prompt always finds its paintings."""
+    n = int(hashlib.sha1(" ".join(how.lower().split()).encode()).hexdigest()[:16], 16)
+    letters = ""
+    for _ in range(8):
+        n, r = divmod(n, 26)
+        letters += chr(97 + r)
+    return "custom" + letters
+
+
+def _style(style: str | None) -> tuple[str, str]:
+    """(label, prompt words) for a style id or custom tag. A custom tag is
+    known through the request that named it; outside one (the admin page)
+    the label alone, and the painting's own meta carries its words."""
+    if style in GEN_STYLES:
+        return GEN_STYLES[style]
+    known = _CUSTOM.get() or {}
+    if style in known:
+        return known[style]
+    if style and _CUSTOM_RE.fullmatch(style):
+        return ("Custom style", "")
+    return GEN_STYLES["gould"]
+
+
 # The styles in the groups the pickers show them in.
 GEN_STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
@@ -953,7 +1063,35 @@ GEN_STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "sketch",
             "risograph",
             "screenprint",
+            "harper",
+        ),
+    ),
+    (
+        "Decorative",
+        (
             "artnouveau",
+            "mucha",
+            "jugendstil",
+            "glasgow",
+            "secession",
+            "deco",
+            "artsandcrafts",
+            "japonisme",
+            "fairytale",
+            "beardsley",
+            "nouveauglass",
+        ),
+    ),
+    (
+        "Period and ornament",
+        (
+            "chinoiserie",
+            "persian",
+            "bestiary",
+            "byzantine",
+            "folkart",
+            "delft",
+            "cigarette",
         ),
     ),
     ("Fine art", ("watercolour", "sumie", "pointillism", "charcoal")),
@@ -1143,7 +1281,8 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     folder = _gen_dir(data_dir)
     key = job["key"]
     err_path = folder / f"{key}.err"
-    label, how = GEN_STYLES.get(job.get("style") or "gould", GEN_STYLES["gould"])
+    label, how = _style(job.get("style") or "gould")
+    how = str(job.get("how") or how)
 
     def fail(why: str) -> str:
         info = {k: job.get(k) for k in ("name", "sci", "style", "birds")}
@@ -1152,6 +1291,10 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         )
         return why
 
+    if not how:
+        return fail(
+            "the custom prompt behind this painting is not known; paint it again from the widget"
+        )
     if job.get("collage"):
         # a blend: the collage of the birds' own paintings, repainted as one
         try:
@@ -1221,6 +1364,8 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         "name": job.get("name", ""),
         "sci": job.get("sci", ""),
     }
+    if _CUSTOM_RE.fullmatch(str(job.get("style") or "")):
+        meta["how"] = how  # a custom prompt's words travel with the painting
     if job.get("collage"):
         meta["birds"] = job.get("birds") or []
         meta["tag"] = job.get("tag", "")
@@ -1251,6 +1396,8 @@ def _start_painting(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
     under this key. The thread carries the caller's context, so the widget's
     network capability scope still applies to it."""
     key = job["key"]
+    if not job.get("how"):
+        job["how"] = _style(job.get("style"))[1]
     with _PAINTING_LOCK:
         if key in _PAINTING:
             return False
@@ -1685,7 +1832,7 @@ def _specimen_sheet(
                 b["key"] = painting
                 credits.append(
                     "AI paintings, "
-                    + GEN_STYLES[style][0].split(" (")[0].lower()
+                    + _style(style)[0].split(" (")[0].lower()
                     + " (fal.ai nano-banana)"
                 )
             continue
@@ -1882,7 +2029,7 @@ def _cluster(
                 "aspect": aspect,
             }, notices
         if made:
-            label = GEN_STYLES[style][0].split(" (")[0].lower()
+            label = _style(style)[0].split(" (")[0].lower()
             pic = {
                 "src": made["src"],
                 "kind": "collage",
@@ -2970,9 +3117,11 @@ def fetch(
     data_dir = Path(ctx.get("data_dir") or ".")
     cap_token = _CAP.set(_daily_cap(settings))
     plates_token = _EXTRA_PLATES.set(_extra_plates(data_dir))
+    custom_token = _CUSTOM.set(None)
     try:
         return _fetch(options, settings, ctx=ctx)
     finally:
+        _CUSTOM.reset(custom_token)
         _EXTRA_PLATES.reset(plates_token)
         _CAP.reset(cap_token)
 
@@ -2987,6 +3136,13 @@ def _fetch(
     pictures = _choice(options.get("pictures"), PICTURES)
     photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
     art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
+    if art_style == "custom":
+        how = (
+            " ".join(str(options.get("art_prompt") or "").split())[:800]
+            or CUSTOM_EXAMPLE
+        )
+        art_style = _custom_tag(how)
+        _CUSTOM.set({art_style: ("Custom style", how)})
     cluster_style = _choice(options.get("cluster_style"), CLUSTER_STYLES)
     picked = options.get("cluster_labels")
     if isinstance(picked, str):
@@ -3306,7 +3462,7 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
 
     def entry(key: str) -> dict[str, Any]:
         base, _, style = key.partition("--")
-        style = style if style in GEN_STYLES else "gould"
+        style = style if style in GEN_STYLES or _CUSTOM_RE.fullmatch(style) else "gould"
         scene = base.split("_")[1] if base.startswith("cluster_") else ""
         return entries.setdefault(
             key,
@@ -3319,7 +3475,7 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
                 "birds": [],
                 "sci": "",
                 "style": style,
-                "style_label": GEN_STYLES[style][0],
+                "style_label": _style(style)[0],
                 "active": None,
                 "archive": [],
                 "error": None,
@@ -3333,6 +3489,12 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
         if meta.get("name") and not e["cluster"]:
             e["name"] = str(meta["name"])
         e["sci"] = e["sci"] or str(meta.get("sci") or "")
+        if meta.get("how") and not e.get("how"):
+            e["how"] = str(meta["how"])
+            words = e["how"]
+            e["style_label"] = "Custom: " + (
+                words[:44].rstrip() + "…" if len(words) > 45 else words
+            )
         if isinstance(meta.get("birds"), list) and not e["birds"]:
             e["birds"] = [
                 b for b in meta["birds"] if isinstance(b, dict) and b.get("name")
@@ -3405,6 +3567,7 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
         "cap": _CAP.get(),
         "running": sorted(running),
         "styles": [(k, v[0]) for k, v in GEN_STYLES.items()],
+        "custom_example": CUSTOM_EXAMPLE,
         "style_groups": [
             (g, [(k, GEN_STYLES[k][0]) for k in ids]) for g, ids in GEN_STYLE_GROUPS
         ],
@@ -3416,7 +3579,10 @@ def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
     is not repainted from here: deleting it lets the widget blend again."""
     if e["cluster"] or not e["sci"]:
         return None
-    return {"key": e["slug"], "style": e["style"], "name": e["name"], "sci": e["sci"]}
+    job = {"key": e["slug"], "style": e["style"], "name": e["name"], "sci": e["sci"]}
+    if e.get("how"):
+        job["how"] = e["how"]
+    return job
 
 
 def blueprint() -> Any:
@@ -3534,6 +3700,11 @@ def blueprint() -> Any:
             "name": name[:80],
             "sci": sci,
         }
+        if style == "custom":
+            how = " ".join(request.form.get("how", "").split())[:800] or CUSTOM_EXAMPLE
+            job["style"] = _custom_tag(how)
+            job["key"] = _pkey(_slug(sci), job["style"])
+            job["how"] = how
         start(job, f"the {name[:80]}")
         return back()
 
@@ -3710,7 +3881,7 @@ def blueprint() -> Any:
     @bp.post("/style-delete")
     def style_delete() -> Any:
         style = request.form.get("art", "")
-        if style not in GEN_STYLES:
+        if style not in GEN_STYLES and not _CUSTOM_RE.fullmatch(style):
             abort(400)
         keys = [
             e["slug"]

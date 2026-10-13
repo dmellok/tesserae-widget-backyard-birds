@@ -777,7 +777,9 @@ def test_every_art_style_makes_a_key_and_a_prompt():
     manifest = json.loads((ROOT / "plugin.json").read_text())
     offered = next(o for o in manifest["cell_options"] if o["name"] == "art_style")
     # offered in groups (test_every_style_is_in_exactly_one_group checks the order)
-    assert sorted(c["value"] for c in offered["choices"]) == sorted(server.GEN_STYLES)
+    assert sorted(c["value"] for c in offered["choices"]) == sorted(
+        [*server.GEN_STYLES, "custom"]
+    )
     for style, (label, how) in server.GEN_STYLES.items():
         key = server._pkey("turdus_merula", style)
         assert server._SLUG_RE.fullmatch(key), key
@@ -1073,9 +1075,10 @@ def test_every_style_is_in_exactly_one_group():
     assert len(grouped) == len(set(grouped))
     manifest = json.loads((server.HERE / "plugin.json").read_text(encoding="utf-8"))
     opt = next(o for o in manifest["cell_options"] if o["name"] == "art_style")
-    assert [c["value"] for c in opt["choices"]] == grouped
+    assert [c["value"] for c in opt["choices"]] == [*grouped, "custom"]
     groups = [c["group"] for c in opt["choices"]]
-    assert groups == sorted(groups, key=[g for g, _ in server.GEN_STYLE_GROUPS].index)
+    order = [*(g for g, _ in server.GEN_STYLE_GROUPS), "Your own"]
+    assert groups == sorted(groups, key=order.index)
 
 
 def test_style_batch_paints_the_unpainted_birds_one_after_another(tmp_path, offline):
@@ -1101,3 +1104,46 @@ def test_style_batch_paints_the_unpainted_birds_one_after_another(tmp_path, offl
         time.sleep(0.1)
     assert len(offline.bodies) == 2
     assert all((folder / f"{j['key']}.jpg").exists() for j in jobs)
+
+
+def test_custom_prompt_paints_with_its_own_words(tmp_path, offline):
+    words = "a mosaic of pressed autumn leaves on linen, soft and warm"
+    opts = {
+        **MELBOURNE,
+        "layout": "latest",
+        "pictures": "gen",
+        "art_style": "custom",
+        "art_prompt": words,
+    }
+    ctx = {"data_dir": str(tmp_path)}
+    with _at(8):
+        server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+        _settle()
+        r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+    sent = json.loads(offline.bodies[0])
+    assert words in sent["prompt"] and "reference photo" in sent["prompt"]
+    tag = server._custom_tag(words)
+    assert server._CUSTOM_RE.fullmatch(tag) and r["art_style"] == tag
+    assert r["latest"]["pic"]["kind"] == "generated"
+    assert "custom style" in r["latest"]["pic"]["credit"]
+    # the words travel with the painting, so the admin page can repaint it
+    (meta,) = [
+        json.loads(f.read_text())
+        for f in (tmp_path / "gen").glob("*.json")
+        if f.stem.endswith(tag)
+    ]
+    assert meta["how"] == words
+    (entry,) = [e for e in server._gallery(tmp_path)["birds"] if e["style"] == tag]
+    assert entry["style_label"].startswith("Custom: a mosaic of pressed")
+    assert server._job_for(entry)["how"] == words
+    # another wording is another style with its own paintings; blank is the example
+    assert server._custom_tag("something else") != tag
+    assert (
+        server._custom_tag(
+            " A  Mosaic of pressed autumn leaves on linen, soft and warm "
+        )
+        == tag
+    )
+    with _at(8):
+        r = server.fetch({**opts, "art_prompt": ""}, {"fal_api_key": "k"}, ctx=ctx)
+    assert r["art_style"] == server._custom_tag(server.CUSTOM_EXAMPLE)

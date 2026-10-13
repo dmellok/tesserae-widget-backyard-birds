@@ -3,7 +3,7 @@
   "name": "Backyard Birds",
   "version": "0.12.0",
   "kind": "widget",
-  "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 29 styles. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
+  "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 47 styles or your own prompt. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
   "icon": "ph-bird",
   "supports": {
     "sizes": [
@@ -305,7 +305,7 @@
           "gen"
         ]
       },
-      "help": "How AI paintings are painted, in groups: natural history plates and prints, fine art, crafts (origami, embroidery, stained glass and more), playful looks (anime, pixel art) and a few jokes. Each style keeps its own painting per bird, so switching back costs nothing. Ink and wash, pixel art, risograph, stained glass and the engraving survive black and white panels best.",
+      "help": "How AI paintings are painted, in groups: natural history plates and prints, decorative styles round Art Nouveau, period and ornament, fine art, crafts, playful looks, a few jokes, and your own prompt. Each style keeps its own painting per bird, so switching back costs nothing. Ink and wash, pixel art, risograph, Beardsley ink, stained glass and the engraving survive black and white panels best.",
       "choices": [
         {
           "value": "gould",
@@ -348,9 +348,99 @@
           "group": "Plates and prints"
         },
         {
+          "value": "harper",
+          "label": "Mid-century modern (Harper)",
+          "group": "Plates and prints"
+        },
+        {
           "value": "artnouveau",
           "label": "Art Nouveau illustration",
-          "group": "Plates and prints"
+          "group": "Decorative"
+        },
+        {
+          "value": "mucha",
+          "label": "Mucha poster",
+          "group": "Decorative"
+        },
+        {
+          "value": "jugendstil",
+          "label": "Jugendstil",
+          "group": "Decorative"
+        },
+        {
+          "value": "glasgow",
+          "label": "Glasgow style",
+          "group": "Decorative"
+        },
+        {
+          "value": "secession",
+          "label": "Vienna Secession",
+          "group": "Decorative"
+        },
+        {
+          "value": "deco",
+          "label": "Art Deco",
+          "group": "Decorative"
+        },
+        {
+          "value": "artsandcrafts",
+          "label": "Arts and Crafts (Morris)",
+          "group": "Decorative"
+        },
+        {
+          "value": "japonisme",
+          "label": "Japonisme",
+          "group": "Decorative"
+        },
+        {
+          "value": "fairytale",
+          "label": "Golden Age fairy-tale plate",
+          "group": "Decorative"
+        },
+        {
+          "value": "beardsley",
+          "label": "Beardsley ink",
+          "group": "Decorative"
+        },
+        {
+          "value": "nouveauglass",
+          "label": "Nouveau stained window",
+          "group": "Decorative"
+        },
+        {
+          "value": "chinoiserie",
+          "label": "Chinoiserie",
+          "group": "Period and ornament"
+        },
+        {
+          "value": "persian",
+          "label": "Persian miniature",
+          "group": "Period and ornament"
+        },
+        {
+          "value": "bestiary",
+          "label": "Medieval bestiary",
+          "group": "Period and ornament"
+        },
+        {
+          "value": "byzantine",
+          "label": "Byzantine icon",
+          "group": "Period and ornament"
+        },
+        {
+          "value": "folkart",
+          "label": "Folk art",
+          "group": "Period and ornament"
+        },
+        {
+          "value": "delft",
+          "label": "Delft tile",
+          "group": "Period and ornament"
+        },
+        {
+          "value": "cigarette",
+          "label": "Edwardian cigarette card",
+          "group": "Period and ornament"
         },
         {
           "value": "watercolour",
@@ -451,8 +541,28 @@
           "value": "pirate",
           "label": "Pirate",
           "group": "Jokes"
+        },
+        {
+          "value": "custom",
+          "label": "Your own prompt",
+          "group": "Your own"
         }
       ]
+    },
+    {
+      "name": "art_prompt",
+      "type": "textarea",
+      "label": "Your own prompt",
+      "default": "",
+      "placeholder": "an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, ochre and dusty rose, and a border of curling leaves and lilies, on plain cream paper",
+      "help": "Describe the medium and the look, as the example does; the widget adds the bird, its reference photo and the plain background. Each wording keeps its own paintings, so a changed prompt paints afresh and the old ones wait on the paintings page. Blank uses the example.",
+      "show_if": {
+        "pictures": [
+          "plate_gen",
+          "gen"
+        ],
+        "art_style": "custom"
+      }
     },
     {
       "name": "cluster_style",

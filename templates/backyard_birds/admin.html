@@ -39,7 +39,13 @@
       <label for="bb-style">Art style</label>
       <select id="bb-style" name="style">
         {% for group, styles in g.style_groups %}<optgroup label="{{ group }}">{% for value, label in styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
+        <optgroup label="Your own"><option value="custom">Your own prompt</option></optgroup>
       </select>
+    </div>
+    <div class="field">
+      <label for="bb-how">Your own prompt</label>
+      <textarea id="bb-how" name="how" rows="2" placeholder="{{ g.custom_example }}"></textarea>
+      <p class="field-help">Used when the style is Your own prompt. Describe the medium and the look; the widget adds the bird and its reference photo. Blank uses the example.</p>
     </div>
     <div class="actions">{{ button('Paint', icon='paint-brush', disabled=not has_key) }}</div>
   </form>
