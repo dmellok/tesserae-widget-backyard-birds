@@ -748,12 +748,13 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
     ),
     "grumpy": (
         "Grumpy (plate style)",
-        "a plate from a nineteenth-century natural history book: a realistic, hand-coloured "
-        "lithograph in the manner of John Gould, soft watercolour washes over fine engraved "
-        "linework on warm cream paper. The one change: the bird looks thoroughly cross, the "
-        "feathers over its eye drawn down into a heavy frown and a hard, indignant glare, "
-        "drawn with the same care as the rest of the plate. Everything else, plumage, "
-        "proportions and pose, stays true to life",
+        "a hand-coloured lithograph from a nineteenth-century natural history book, soft "
+        "watercolour washes over fine engraved linework on warm cream paper, of a comically "
+        "plump bird: an almost perfectly round ball of feathers with a big head, a stubby tail "
+        "and small feet, like a cartoon game character. Give it a very expressive, furious "
+        "face: heavy dark brows of feathers slanting down over narrowed eyes, a hard glare "
+        "and a determined scowl. Paint all of it with real, detailed feathers, keeping the "
+        "species' true colours, markings and bill so it is still plainly that bird",
     ),
     "sketch": (
         "Field sketch",
