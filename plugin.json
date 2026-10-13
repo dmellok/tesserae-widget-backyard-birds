@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -22,7 +22,36 @@
       "label": "fal.ai API key (AI paintings, experimental)",
       "secret": true,
       "default": "",
-      "help": "Only needed for the AI painting picture options. Each bird is painted once, from an openly licensed reference photo, in the background (it shows on a later refresh), and kept, at about US$0.04 a bird and at most 12 a day. Manage the paintings on this widget's page under Widgets. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
+      "help": "Only needed for the AI painting picture options. Each bird is painted once, from an openly licensed reference photo, in the background (it shows on a later refresh), and kept, at about US$0.04 a bird up to the daily limit below. Manage the paintings on this widget's page under Widgets. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
+    },
+    {
+      "name": "gen_daily_cap",
+      "type": "select",
+      "label": "AI paintings per day",
+      "default": "12",
+      "help": "The most new AI paintings (and cluster blends) made in a day, at about US$0.04 each. Paintings are kept, so a garden's birds only cost once; raise this to fill a new garden or a specimen sheet faster.",
+      "choices": [
+        {
+          "value": "6",
+          "label": "6 (about US$0.24)"
+        },
+        {
+          "value": "12",
+          "label": "12 (about US$0.48)"
+        },
+        {
+          "value": "24",
+          "label": "24 (about US$0.96)"
+        },
+        {
+          "value": "48",
+          "label": "48 (about US$1.92)"
+        },
+        {
+          "value": "96",
+          "label": "96 (about US$3.84)"
+        }
+      ]
     }
   ],
   "cell_options": [
@@ -172,11 +201,15 @@
       "type": "select",
       "label": "Photo colour",
       "default": "toned",
-      "help": "With classic plates on, a photo standing in for a bird without a plate is toned sepia so the set matches. Natural colour leaves photos as they are.",
+      "help": "With classic plates on, a photo standing in for a bird without a plate is toned sepia so the set matches. Lightly toned keeps most of the photo's colour with a warm cast; natural colour leaves photos as they are.",
       "choices": [
         {
           "value": "toned",
           "label": "Toned to match the plates"
+        },
+        {
+          "value": "light",
+          "label": "Lightly toned"
         },
         {
           "value": "natural",

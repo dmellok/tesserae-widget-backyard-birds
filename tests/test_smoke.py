@@ -672,3 +672,35 @@ def test_specimen_sheet_sizes_birds_by_length():
         "Troglodytes troglodytes", lengths
     )
     assert server._size_factor("Unknown bird", lengths) == 1.0
+
+
+def test_daily_limit_is_a_setting(tmp_path, offline):
+    gen = tmp_path / "gen"
+    gen.mkdir()
+    (gen / "budget.json").write_text(json.dumps({time.strftime("%Y-%m-%d"): 12}))
+    opts = {**MELBOURNE, "layout": "bleed", "pictures": "gen"}
+    with _at(8):
+        at_default = server.fetch(
+            opts, {"fal_api_key": "k"}, ctx={"data_dir": str(tmp_path)}
+        )
+        _settle()
+        raised = server.fetch(
+            opts,
+            {"fal_api_key": "k", "gen_daily_cap": "24"},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        _settle()
+    assert any("limit of 12" in n for n in at_default["notices"])
+    assert any(n.startswith("Painting the ") for n in raised["notices"])
+    assert len(offline.bodies) == 1
+    assert server._daily_cap({"gen_daily_cap": "7"}) == 12, "only the offered limits"
+
+
+def test_photo_tone_light(tmp_path, offline):
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "photo_tone": "light", "pictures": "none"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert r["photo_tone"] == "light"

@@ -72,6 +72,21 @@ INAT_TAXA = "https://api.inaturalist.org/v1/taxa"
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
 GEN_DAILY_CAP = 12
+# The daily limit in force: the widget setting, carried as a context variable
+# so the painting threads (which copy the context) and the admin page see the
+# same limit without threading it through every call.
+GEN_CAPS = (6, 12, 24, 48, 96)
+_CAP: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "birds_cap", default=GEN_DAILY_CAP
+)
+
+
+def _daily_cap(settings: dict[str, Any] | None) -> int:
+    """The widget setting's daily limit on new AI paintings, or the default."""
+    v = _int((settings or {}).get("gen_daily_cap"), GEN_DAILY_CAP, 1, 1000)
+    return v if v in GEN_CAPS else GEN_DAILY_CAP
+
+
 GEN_TIMEOUT_S = 120
 # A failed painting is not retried for this long, so a bad key or an empty
 # fal balance costs one attempt per bird, not one per refresh.
@@ -102,7 +117,7 @@ CAPTIONS = (
 )
 PICTURES = ("plate_photo", "plate_gen", "gen", "photo", "none")
 # A photo shown among plates is toned to a warm monotone by default.
-PHOTO_TONES = ("toned", "natural")
+PHOTO_TONES = ("toned", "light", "natural")
 # What the panel can show. A page is composed once and quantised per device
 # afterwards, so the widget cannot learn this at render time; the cell says.
 LEVELS = ("colour", "gray16", "gray4", "mono")
@@ -1000,8 +1015,8 @@ def _may_paint(
         return False, NOTE_GEN_FAILED.format(name=label, why=failed.get("why"))
     if not (allow_new and fal_key):
         return False, None
-    if _budget_used(folder) >= GEN_DAILY_CAP:
-        return False, NOTE_GEN_CAP.format(cap=GEN_DAILY_CAP)
+    if _budget_used(folder) >= _CAP.get():
+        return False, NOTE_GEN_CAP.format(cap=_CAP.get())
     return True, None
 
 
@@ -1016,7 +1031,7 @@ def _generated(
 ) -> tuple[dict[str, Any] | None, bool, str | None]:
     """(picture, started_one, notice). Reads a kept painting, or starts one in
     the background when allowed: one new painting per fetch at most, and
-    GEN_DAILY_CAP a day, so a busy morning fills in over a few refreshes. A
+    the daily limit, so a busy morning fills in over a few refreshes. A
     bird whose painting failed is left alone for GEN_RETRY_S and the failure
     is shown as a notice."""
     key = _pkey(_slug(row["sci"] or row["name"]), style)
@@ -1823,6 +1838,7 @@ def fetch(
     caption = _choice(options.get("caption"), CAPTIONS)
     pictures = _choice(options.get("pictures"), PICTURES)
     photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
+    _CAP.set(_daily_cap(settings))
     art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
     cluster_style = _choice(options.get("cluster_style"), CLUSTER_STYLES)
     cluster_n = _int(
@@ -2123,7 +2139,7 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
     return {
         "birds": ordered,
         "used": _budget_used(folder),
-        "cap": GEN_DAILY_CAP,
+        "cap": _CAP.get(),
         "running": sorted(running),
         "styles": [(k, v[0]) for k, v in GEN_STYLES.items()],
     }
@@ -2168,15 +2184,20 @@ def blueprint() -> Any:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def fal_key() -> str:
+    def settings() -> dict[str, Any]:
         store = current_app.config.get("SETTINGS_STORE")
         if store is None:
-            return ""
+            return {}
         p = plugin()
-        settings = store.get_for_runtime(
-            "plugins", p.id, p.manifest.get("settings", [])
-        )
-        return str((settings or {}).get("fal_api_key") or "").strip()
+        got = store.get_for_runtime("plugins", p.id, p.manifest.get("settings", []))
+        return got if isinstance(got, dict) else {}
+
+    def fal_key() -> str:
+        return str(settings().get("fal_api_key") or "").strip()
+
+    @bp.before_request
+    def daily_cap() -> None:
+        _CAP.set(_daily_cap(settings()))
 
     def slug_or_404(slug: str) -> str:
         if not _SLUG_RE.fullmatch(slug):
@@ -2191,8 +2212,11 @@ def blueprint() -> Any:
         folder = _gen_dir(data_dir())
         if not key:
             flash("Add a fal.ai key in this widget's settings first.", "warn")
-        elif _budget_used(folder) >= GEN_DAILY_CAP:
-            flash(f"Today's limit of {GEN_DAILY_CAP} paintings is used up.", "warn")
+        elif _budget_used(folder) >= _CAP.get():
+            flash(
+                f"Today's limit of {_CAP.get()} paintings is used up. Raise it in this widget's settings.",
+                "warn",
+            )
         elif not _start_painting(job, data_dir(), key):
             flash(f"{label} is already being painted.", "info")
         else:

@@ -47,7 +47,7 @@ function pic(p, cls, toneAll) {
   if (p.paper) {
     return `<div class="${cls} fit" style="background:${esc(p.paper)}"><img src="${p.src}" alt=""></div>`;
   }
-  const tone = toneAll && p.kind === 'photo' ? ' toned' : '';
+  const tone = toneAll && p.kind === 'photo' ? ` toned${toneAll === 'light' ? ' light' : ''}` : '';
   const pos = p.focus ? `object-position:${(p.focus[0] * 100).toFixed(1)}% ${(p.focus[1] * 100).toFixed(1)}%` : '';
   return `<div class="${cls}${tone}"><img src="${p.src}" alt="" style="${pos}"></div>`;
 }
@@ -394,7 +394,8 @@ export default function render(shadow, ctx) {
   const size = (ctx && ctx.cell && ctx.cell.size) || 'md';
   const layout = d.layout || 'list';
   const showSci = d.show_sci !== false;
-  const tone = String(d.pictures || '').startsWith('plate') && d.photo_tone !== 'natural';
+  /* false, true (full sepia) or 'light' (a warm cast over most of the colour) */
+  const tone = String(d.pictures || '').startsWith('plate') && d.photo_tone !== 'natural' && (d.photo_tone === 'light' ? 'light' : true);
 
   let body;
   if (d.error) {
@@ -432,6 +433,8 @@ export default function render(shadow, ctx) {
       .toned { background: #f3ead6; }
       .bb .fit img { object-fit: contain; }
       .toned img { filter: grayscale(1) sepia(.5) contrast(1.12) brightness(1.04); mix-blend-mode: multiply; }
+      .toned.light { background: #f8f2e4; }
+      .toned.light img { filter: saturate(.7) sepia(.2) contrast(1.04); }
       .new {
         display: inline-block; margin-left: 1.4cqmin; padding: 0.3cqmin 1cqmin; vertical-align: 0.4cqmin;
         background: var(--alert); color: #fff; font-size: 2.2cqmin; font-weight: 800;
