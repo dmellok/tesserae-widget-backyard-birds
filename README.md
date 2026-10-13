@@ -13,7 +13,7 @@ Put BirdNET-Go's address in **BirdNET-Go address**, for example `http://birdnet.
 - `/api/v2/analytics/species/daily`: today's species, with counts per hour, first and last heard, and the new-species flag
 - `/api/v2/detections/recent`: the latest individual detections
 
-Both are public unless BirdNET-Go's Private Mode is on. If it is, create an API token in BirdNET-Go and paste it into **BirdNET-Go API token**. The token is only ever sent to the BirdNET-Go address, never to a thumbnail host it links to.
+BirdNET-Go's reads stay public even with its Basic Authentication on (the password guards the settings pages), so **BirdNET-Go API token** is normally left blank. It is there for a reverse proxy or a BirdNET-Go build that wants a bearer token; the token is only ever sent to the BirdNET-Go address, never to a thumbnail host it links to.
 
 Common names come from BirdNET-Go, so they appear in whatever language BirdNET-Go is set to.
 

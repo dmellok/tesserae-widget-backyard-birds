@@ -65,7 +65,7 @@
     {
       "name": "token",
       "type": "string",
-      "label": "BirdNET-Go API token",
+      "label": "BirdNET-Go bearer token (normally blank)",
       "default": "",
       "secret": true,
       "show_if": {
@@ -73,7 +73,7 @@
           "not": ""
         }
       },
-      "help": "Only if BirdNET-Go's Private Mode is on. Create one in BirdNET-Go under Settings, Security."
+      "help": "BirdNET-Go's reads need no login, even with Basic Authentication on. Fill this only for a reverse proxy or build that wants a bearer token."
     },
     {
       "name": "layout",
