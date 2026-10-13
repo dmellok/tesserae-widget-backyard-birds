@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -247,7 +247,7 @@
           "gen"
         ]
       },
-      "help": "How AI paintings are painted. Each style keeps its own painting per bird, so switching back costs nothing. The engraving suits black and white panels.",
+      "help": "How AI paintings are painted: natural history plates, prints and crafts (origami, risograph, stained glass, mosaic and more), fine art, playful looks (anime, pixel art, clay), and a few jokes. Each style keeps its own painting per bird, so switching back costs nothing. Ink and wash, pixel art, risograph, stained glass and the engraving survive black and white panels best.",
       "choices": [
         {
           "value": "gould",
@@ -270,12 +270,100 @@
           "label": "Linocut"
         },
         {
+          "value": "grumpy",
+          "label": "Grumpy (plate style)"
+        },
+        {
           "value": "sketch",
           "label": "Field sketch"
         },
         {
-          "value": "grumpy",
-          "label": "Grumpy (plate style)"
+          "value": "anime",
+          "label": "Anime"
+        },
+        {
+          "value": "origami",
+          "label": "Origami"
+        },
+        {
+          "value": "felt",
+          "label": "Needle felt"
+        },
+        {
+          "value": "clay",
+          "label": "Clay figure"
+        },
+        {
+          "value": "kawaii",
+          "label": "Kawaii sticker"
+        },
+        {
+          "value": "pixel",
+          "label": "Pixel art"
+        },
+        {
+          "value": "bricks",
+          "label": "Brick-built"
+        },
+        {
+          "value": "risograph",
+          "label": "Risograph print"
+        },
+        {
+          "value": "screenprint",
+          "label": "Screen print poster"
+        },
+        {
+          "value": "embroidery",
+          "label": "Embroidery"
+        },
+        {
+          "value": "stainedglass",
+          "label": "Stained glass"
+        },
+        {
+          "value": "mosaic",
+          "label": "Mosaic"
+        },
+        {
+          "value": "papercut",
+          "label": "Paper cut"
+        },
+        {
+          "value": "sumie",
+          "label": "Ink and wash"
+        },
+        {
+          "value": "pointillism",
+          "label": "Pointillism"
+        },
+        {
+          "value": "artnouveau",
+          "label": "Art Nouveau illustration"
+        },
+        {
+          "value": "watercolour",
+          "label": "Modern watercolour"
+        },
+        {
+          "value": "charcoal",
+          "label": "Charcoal"
+        },
+        {
+          "value": "hats",
+          "label": "Tiny hats"
+        },
+        {
+          "value": "superhero",
+          "label": "Superhero"
+        },
+        {
+          "value": "portrait",
+          "label": "Victorian portrait"
+        },
+        {
+          "value": "pirate",
+          "label": "Pirate"
         }
       ]
     },

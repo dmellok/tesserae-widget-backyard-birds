@@ -770,3 +770,17 @@ def test_white_bird_is_cut_out_whole_and_a_wash_dropped():
         ].mean()
         > 0.95
     )
+
+
+def test_every_art_style_makes_a_key_and_a_prompt():
+    manifest = json.loads((ROOT / "plugin.json").read_text())
+    offered = next(o for o in manifest["cell_options"] if o["name"] == "art_style")
+    assert [c["value"] for c in offered["choices"]] == list(server.GEN_STYLES)
+    for style, (label, how) in server.GEN_STYLES.items():
+        key = server._pkey("turdus_merula", style)
+        assert server._SLUG_RE.fullmatch(key), key
+        assert label and how
+        prompt = server.GEN_ONE.format(
+            name="Eurasian Blackbird", sci="Turdus merula", style=how
+        )
+        assert "plain" in prompt and "Eurasian Blackbird" in prompt

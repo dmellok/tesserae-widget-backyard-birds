@@ -761,6 +761,94 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
         "a naturalist's field sketch in graphite with a light watercolour wash: loose "
         "construction lines, a few annotations of shape only, on cream sketchbook paper",
     ),
+    "anime": (
+        "Anime",
+        "a hand-drawn anime film illustration: clean confident line art, soft cel shading, large expressive eyes and gentle pastel colours, still true to the species, on plain pale paper",
+    ),
+    "origami": (
+        "Origami",
+        "a folded paper origami model of the bird, made from coloured paper in the species' own colours, with crisp creases, visible folds and soft studio light, on a plain pale paper background",
+    ),
+    "felt": (
+        "Needle felt",
+        "a needle-felted wool figure of the bird, soft and fuzzy, in the species' true colours and markings, photographed on a plain pale background",
+    ),
+    "clay": (
+        "Clay figure",
+        "a hand-sculpted plasticine figure of the bird for a stop-motion film, chunky with a slight sheen and visible thumbprints, in the species' true colours, on a plain pale background",
+    ),
+    "kawaii": (
+        "Kawaii sticker",
+        "a cute kawaii sticker of the bird: round and chibi with a happy face, flat bright colours, a thick white die-cut border, on plain white paper",
+    ),
+    "pixel": (
+        "Pixel art",
+        "16-bit pixel art sprite of the bird with a limited palette, crisp square pixels and no anti-aliasing, true to the species' colours, on a plain pale background",
+    ),
+    "bricks": (
+        "Brick-built",
+        "a model of the bird built from small plastic toy bricks, studs showing, in the species' colours, on a plain pale background",
+    ),
+    "risograph": (
+        "Risograph print",
+        "a risograph print in two or three overprinted spot colours, grainy texture and slight misregistration, on plain off-white paper",
+    ),
+    "screenprint": (
+        "Screen print poster",
+        "a mid-century screen-printed nature poster: flat shapes of colour, simple bold forms and a slightly textured ink, on plain cream paper",
+    ),
+    "embroidery": (
+        "Embroidery",
+        "satin-stitch embroidery in silk thread on plain natural linen, every feather in stitches of the species' true colours",
+    ),
+    "stainedglass": (
+        "Stained glass",
+        "a stained-glass panel of the bird: dark lead lines around pieces of jewel-coloured glass in the species' colours, on a plain pale background",
+    ),
+    "mosaic": (
+        "Mosaic",
+        "a mosaic of small square tesserae of stone and glass in the species' colours, set in pale grout, on a plain pale background",
+    ),
+    "papercut": (
+        "Paper cut",
+        "a layered cut-paper collage of the bird, with sheets of coloured paper in the species' colours and soft shadows between the layers, on plain white paper",
+    ),
+    "sumie": (
+        "Ink and wash",
+        "a Japanese sumi-e ink and wash painting: a few confident brushstrokes of black ink with soft grey washes and a touch of colour, on plain rice paper",
+    ),
+    "pointillism": (
+        "Pointillism",
+        "a pointillist painting made entirely of small dots of pure colour that blend at a distance, on plain white paper",
+    ),
+    "artnouveau": (
+        "Art Nouveau illustration",
+        "an Art Nouveau illustration with sinuous flowing lines, a muted palette and decorative leaves curling round the branch, on plain cream paper",
+    ),
+    "watercolour": (
+        "Modern watercolour",
+        "a loose, airy modern watercolour with soft wet edges, a few precise details and plenty of white space, on plain white paper",
+    ),
+    "charcoal": (
+        "Charcoal",
+        "a dramatic charcoal drawing with rich blacks, smudged soft tones and a few white chalk highlights, on plain toned paper",
+    ),
+    "hats": (
+        "Tiny hats",
+        "a realistic hand-coloured lithograph in the manner of John Gould on warm cream paper, except that the bird wears a small hat that suits its personality, painted with the same care",
+    ),
+    "superhero": (
+        "Superhero",
+        "a realistic natural history painting on plain cream paper of the bird striking a heroic pose with a small flowing cape, dramatic light, plumage still true to life",
+    ),
+    "portrait": (
+        "Victorian portrait",
+        "a stiff, dignified Victorian oil portrait of the bird as a family ancestor, in a small gilt oval frame, plumage painted true to life, on plain cream paper",
+    ),
+    "pirate": (
+        "Pirate",
+        "a realistic hand-coloured lithograph in the manner of John Gould on warm cream paper, except that the bird is a pirate with an eye patch, a small tricorn hat and a cross scowl",
+    ),
 }
 GEN_STYLE_IDS = tuple(GEN_STYLES)
 GEN_BLEND = (
