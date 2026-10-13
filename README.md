@@ -23,10 +23,10 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 
 | Layout | What it shows |
 | --- | --- |
-| Field log | Today's birds as a list: picture, name, when last heard, calls today, with a 24-hour activity strip |
-| Latest visitor | The bird just heard, large, beside today's tally |
+| Field log | The bird just heard, its plate to the edge of the page, with the rest of today's birds named beside it, their calls and when each was last heard, and a strip of the day's hours |
+| Latest visitor | The same page with the bird larger and the tally beside it: calls, certainty, species, then the others in brief |
 | Gallery | A card per bird, with a "new today" flag |
-| Day chart | Who called in which hour, with optional counts in the cells |
+| Day chart | A ledger of who called in which hour, darker where busier, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
 | Cluster | Today's busiest birds on one page: a specimen sheet of their AI paintings, a blended AI scene, or a numbered montage of their plates and photos |
 | Full bleed | The chosen bird's picture fills the cell, with one of fourteen caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype, postage stamp, woodblock print, cameo, Art Nouveau, sonogram |
@@ -126,7 +126,7 @@ It keeps public-domain still images only, prefers known plate series (Audubon, G
 
 ## Fonts
 
-**Type on the printed looks** picks the typeface for the book plate, the full-bleed captions and the cluster pages: Classic (IM Fell English, the default), editorial italic (Playfair Display), typewriter (Special Elite), handwritten (Caveat), modern (Archivo) or the panel's own theme font. The field log, latest visitor, gallery and day chart always follow the panel's theme.
+**Type** picks the typeface for every page: Classic (IM Fell English, the default), editorial italic (Playfair Display), typewriter (Special Elite), handwritten (Caveat), modern (Archivo) or the panel's own theme font.
 
 The caption styles bundle Playfair Display, Caveat, IM Fell English, Archivo Black and Archivo Narrow (SIL Open Font License) and Special Elite (Apache 2.0); their licences are in `fonts/`. Only the faces a style needs are sent with a render. On the black-and-white panel setting the fine serif and handwritten strokes are thickened so they survive dithering.
 

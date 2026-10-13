@@ -3271,14 +3271,15 @@ def _fetch(
         latest["order"] = firsts.index(_minutes(latest.get("first") or "") or 0) + 1
 
     # Pictures only where the layout draws them: one big one for the single
-    # bird layouts, a thumbnail per row for the list and gallery.
+    # bird layouts (the list is one too now: its hero to the edge of the page,
+    # the rest named beside it), a thumbnail per card for the gallery.
     notices: list[str] = []
     cluster = None
-    if layout in ("latest", "plate", "bleed") and latest:
+    if layout in ("latest", "plate", "bleed", "list") and latest:
         notices = _attach_pictures(
             [latest],
             pictures,
-            SIZE[layout],
+            SIZE["latest" if layout == "list" else layout],
             base,
             token,
             fal_key,
@@ -3286,7 +3287,7 @@ def _fetch(
             levels,
             art_style,
         )
-    elif layout in ("list", "gallery", "chorus"):
+    elif layout in ("gallery", "chorus"):
         notices = _attach_pictures(
             shown,
             pictures,
@@ -3360,15 +3361,14 @@ def _fetch(
         s.pop("thumb", None)
         s["ago_min"] = _ago_min(s.get("last", ""), now)
 
-    groups: tuple[str, ...] = ()
+    # every page is printed matter now: the engraved faces go with all of
+    # them, the full-bleed captions add their own, the notebook its hand
+    groups: tuple[str, ...] = FONT_GROUPS["engraved"]
     if layout == "bleed":
-        groups = FONT_GROUPS.get(caption, ())
-    elif layout in ("plate", "cluster", "chorus"):
-        groups = FONT_GROUPS["engraved"]
-        if layout == "cluster" and cluster_style == "notebook":
-            groups = (*groups, "caveat")
-    if layout in ("bleed", "plate", "cluster", "chorus"):
-        groups = tuple(dict.fromkeys((*groups, *FONTS[font])))
+        groups = tuple(dict.fromkeys((*groups, *FONT_GROUPS.get(caption, ()))))
+    elif layout == "cluster" and cluster_style == "notebook":
+        groups = (*groups, "caveat")
+    groups = tuple(dict.fromkeys((*groups, *FONTS[font])))
     credits = []
     pictured = [*shown, *([latest] if latest else [])]
     if cluster:

@@ -214,7 +214,7 @@ def test_plate_first_then_toned_photo(tmp_path, offline):
     }
     with _at(8), patch.object(server, "_pack", return_value=pack):
         r = server.fetch(
-            {**MELBOURNE, "layout": "list", "count": 12},
+            {**MELBOURNE, "layout": "gallery", "count": 12},
             {},
             ctx={"data_dir": str(tmp_path)},
         )
@@ -258,12 +258,22 @@ def test_token_only_goes_to_birdnet(tmp_path):
 def test_resized_for_the_layout(tmp_path, offline):
     with _at(8):
         r = server.fetch(
-            {**MELBOURNE, "layout": "list", "pictures": "photo"},
+            {**MELBOURNE, "layout": "gallery", "pictures": "photo"},
             {},
             ctx={"data_dir": str(tmp_path)},
         )
     raw = base64.b64decode(r["species"][0]["pic"]["src"].split(",", 1)[1])
-    assert max(Image.open(io.BytesIO(raw)).size) <= server.SIZE["list"]
+    assert max(Image.open(io.BytesIO(raw)).size) <= server.SIZE["gallery"]
+    # the list is a hero page now: one big picture of the hero bird, none per row
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "layout": "list", "pictures": "photo"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    raw = base64.b64decode(r["latest"]["pic"]["src"].split(",", 1)[1])
+    assert max(Image.open(io.BytesIO(raw)).size) <= server.SIZE["latest"]
+    assert not any(s.get("pic") for s in r["species"])
 
 
 def test_generated_needs_a_key(tmp_path, offline):
@@ -400,7 +410,9 @@ def test_fonts_only_for_the_style_on_screen(tmp_path, offline):
         )
     assert "font-family:'Caveat'" in notebook["font_css"]
     assert "Playfair" not in notebook["font_css"]
-    assert lst["font_css"] == ""
+    # every page is printed matter now: the list carries the engraved faces, not the notebook's hand
+    assert "IM Fell English" in lst["font_css"]
+    assert "Caveat" not in lst["font_css"]
 
 
 def test_panel_levels_convert_pictures_and_keep_separate_caches(tmp_path, offline):
@@ -410,7 +422,12 @@ def test_panel_levels_convert_pictures_and_keep_separate_caches(tmp_path, offlin
     for levels in ("colour", "gray16", "gray4", "mono"):
         with _at(8):
             r = server.fetch(
-                {**MELBOURNE, "layout": "list", "pictures": "photo", "panel": levels},
+                {
+                    **MELBOURNE,
+                    "layout": "gallery",
+                    "pictures": "photo",
+                    "panel": levels,
+                },
                 {},
                 ctx={"data_dir": str(tmp_path)},
             )
@@ -832,7 +849,7 @@ def test_font_choice_inlines_its_faces(tmp_path, offline):
         )
     assert tw["font"] == "typewriter" and "Special Elite" in tw["font_css"]
     assert "Special Elite" not in theme["font_css"]
-    assert lst["font_css"] == "", "theme layouts carry no bundled faces"
+    assert "Special Elite" in lst["font_css"], "the list takes the chosen face too"
 
 
 def test_sun_and_moon_are_plausible():

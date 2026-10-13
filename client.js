@@ -1,9 +1,11 @@
 /* backyard_birds: what BirdNET-Go has heard today.
 
-   Six layouts off one payload. list, latest, gallery and chart follow the
-   theme; plate and bleed are printed matter, so they carry their own paper
-   and ink and ignore it. Pictures and the caption fonts arrive inlined from
-   the server: the render sandbox has no network.
+   Nine layouts off one payload, all printed matter: cream paper, engraved
+   type, hairline rules. The everyday pages (list, latest, gallery, chart)
+   put the hero bird's picture to the edge of the page with the rest named
+   beside it, or set the birds as specimen cards or a ledger; plate, bleed
+   and cluster are pages from the book. Pictures and the faces arrive
+   inlined from the server: the render sandbox has no network.
 
    A photo shown among classic plates is toned to a warm monotone so a garden
    where only some birds have a plate still reads as one set, unless the cell
@@ -216,16 +218,9 @@ function dial(hourly, nowHour) {
 }
 
 function head(d) {
-  return `
-    <div class="head">
-      <div class="hmark">${BIRD}</div>
-      <div class="htxt">
-        <div class="ht">${esc(d.label)}</div>
-        <div class="hs">${esc(d.date)} · ${d.demo ? 'demo, no BirdNET-Go set' : 'heard by BirdNET-Go'}</div>
-      </div>
-      <div class="hstat a"><b>${d.species_today}</b><span>species</span></div>
-      <div class="hstat"><b>${d.detections_today}</b><span>calls</span></div>
-    </div>`;
+  /* the printed header every everyday page shares: the garden and the day
+     in small caps over a double rule */
+  return `<div class="ph"><span class="ph-k">${esc(d.label)} · heard to-day</span><b class="ph-d">${esc(d.date)}</b></div><div class="ph-rule"></div>`;
 }
 
 function strip(d) {
@@ -246,47 +241,69 @@ function foot(d) {
 
 /* ---------------- layouts ---------------- */
 
+/* The hero bird's picture to the edge of the page, its name set over the
+   paper. A plate is multiplied onto the paper so its own paper disappears;
+   a photo fades into the paper along the edge it meets the text. */
+function hero(d, L, tone, big) {
+  const p = L.pic;
+  const kick = `${esc(d.hero_kick || 'Just heard')} · ${esc(L.last)}`;
+  const sub = `${d.show_sci !== false && L.sci ? `${esc(L.sci)} · ` : ''}heard the ${ordinalWords(L.count) || `${L.count}`} time to-day`;
+  let picture;
+  if (!p || !p.src) picture = `<div class="ev-nopic">${BIRD}</div>`;
+  else {
+    const plate = p.kind !== 'photo';
+    const pos = p.focus ? `object-position:${(p.focus[0] * 100).toFixed(1)}% ${(p.focus[1] * 100).toFixed(1)}%` : '';
+    const cls = plate ? 'ev-plate' : `ev-photo${tone && !plate ? ` toned${tone === 'light' ? ' light' : ''}` : ''}`;
+    picture = `<div class="${cls}"><img src="${p.src}" alt="" style="${pos}"></div>`;
+  }
+  return `<div class="ev-hero${big ? ' big' : ''}">${picture}<div class="ev-fade"></div>
+      <div class="ev-cap"><div class="ev-kick">${kick}</div><div class="ev-name" style="${fit(L.name, big ? 8.4 : 6.6, big ? 46 : 32, 0.56)}">${esc(L.name)}.${tag(L)}</div><div class="ev-sub">${sub}</div>${song(d, 'ev-song')}</div>
+    </div>`;
+}
+
 function list(d, showSci, tone) {
-  const rows = d.species.map((s) => `
-    <div class="row">
-      ${d.pictures === 'none' ? `<div class="rpic nopic">${BIRD}</div>` : pic(s.pic, 'rpic', tone)}
-      <div class="rnm"><div class="rcn">${esc(s.name)}${tag(s)}</div>${showSci && s.sci ? `<div class="rsn">${esc(s.sci)}</div>` : ''}</div>
-      <div class="rago">${esc(ago(s.ago_min))}</div>
-      <div class="rct">${s.count}</div>
+  const L = d.latest;
+  const others = d.species.filter((s) => s.name !== L.name);
+  const rows = others.map((s) => `
+    <div class="ev-row">
+      <div class="ev-rn"><div class="ev-rname">${esc(s.name)}${tag(s)}</div><div class="ev-rsub">${showSci && s.sci ? `${esc(s.sci)} · ` : ''}${esc(ago(s.ago_min))}</div></div>
+      <div class="ev-rct">${s.count}</div>
     </div>`).join('');
-  return `${head(d)}<div class="rows">${rows}</div><div class="lfoot">${strip(d)}${foot(d)}</div>`;
+  return `
+    <div class="ev">
+      ${hero(d, L, tone, false)}
+      <div class="ev-side">${head(d)}<div class="ev-rows fitrows">${rows}</div>
+        <div class="ev-foot">${strip(d)}<span class="ev-tot">${d.species_today} species · ${d.detections_today} calls</span></div>
+      </div>
+    </div>${foot(d)}`;
 }
 
 function latest(d, showSci, tone) {
   const L = d.latest;
   const others = d.species.filter((s) => s.name !== L.name).sort((a, b) => b.count - a.count);
+  const rows = others.map((s) => `<div class="ev-row small"><div class="ev-rn"><div class="ev-rname">${esc(s.name)}${tag(s)}</div></div><div class="ev-rct">${s.count}</div></div>`).join('');
   return `
-    <div class="lat">
-      <div class="lpic">${pic(L.pic, 'lp', tone)}
-        <div class="lcap">
-          <div class="kick">${esc(d.hero_kick || 'Just heard')} · ${esc(L.last)}</div>
-          <div class="lname">${esc(L.name)}${tag(L)}</div>
-          <div class="lmeta">${showSci && L.sci ? `<i>${esc(L.sci)}</i>` : ''}<span>${Math.round(L.conf * 100)}% sure</span><span>${L.count} calls today</span></div>
-          ${song(d, 'l-song')}
-        </div>
-      </div>
-      <div class="lside">
-        <div class="lstats"><div class="a"><b>${d.species_today}</b><span>species today</span></div><div><b>${d.detections_today}</b><span>calls</span></div></div>
-        <div class="lalso"><div class="cap">Also heard today</div><div class="fitrows">${others.map((s) => `
-          <div class="arow"><span>${esc(s.name)}${tag(s)}</span><b>${s.count}</b></div>`).join('')}</div></div>
-        <div class="lfoot2">${esc(d.label)} · ${esc(d.date)}</div>
+    <div class="ev ev-latest">
+      ${hero(d, L, tone, true)}
+      <div class="ev-side">${head(d)}
+        <div class="ev-stats"><div><b>${L.count}</b><span>calls, this bird</span></div><div><b>${Math.round(L.conf * 100)}%</b><span>certain</span></div><div><b>${d.species_today}</b><span>species to-day</span></div></div>
+        <div class="ev-also">Also heard to-day</div>
+        <div class="ev-rows fitrows">${rows}</div>
+        <div class="ev-foot">${strip(d)}<span class="ev-tot">${d.detections_today} calls</span></div>
       </div>
     </div>${foot(d)}`;
 }
 
-function gallery(d, _showSci, tone) {
+function gallery(d, showSci, tone) {
   const tiles = d.species.slice(0, 12).map((s) => `
-    <div class="tile${s.new ? ' isnew' : ''}">
-      ${pic(s.pic, 'tpic', tone)}
-      <div class="tcap"><span>${esc(s.name)}</span><b>${s.count}</b></div>
-      ${s.new ? '<div class="tnew">new today</div>' : ''}
+    <div class="gc${s.new ? ' isnew' : ''}">
+      ${pic(s.pic, 'gc-p', tone)}
+      <div class="gc-n">${esc(s.name)}${tag(s)}</div>
+      ${showSci && s.sci ? `<div class="gc-s">${esc(s.sci)}</div>` : ''}
+      <div class="gc-c">${s.count}<span> calls · ${esc(ago(s.ago_min))}</span></div>
     </div>`).join('');
-  return `${head(d)}<div class="grid n${Math.min(d.species.length, 12)}">${tiles}</div>${foot(d)}`;
+  return `${head(d)}<div class="grid n${Math.min(d.species.length, 12)}">${tiles}</div>
+    <div class="ev-foot bare"><span class="ev-tot">${d.species_today} species · ${d.detections_today} calls</span></div>${foot(d)}`;
 }
 
 function chart(d) {
@@ -308,10 +325,10 @@ function chart(d) {
   };
   return `${head(d)}
     <div class="chart${labels !== 'none' ? ' labelled' : ''}"><div class="crows">
-      ${rows.map((s) => { const rowMax = Math.max(...hours.map((h) => s.hourly[h] || 0)); return `<div class="crow"><div class="cn">${esc(s.name)}${tag(s)}</div>
+      ${rows.map((s, i) => { const rowMax = Math.max(...hours.map((h) => s.hourly[h] || 0)); return `<div class="crow"><div class="ci">${i + 1}.</div><div class="cn">${esc(s.name)}${tag(s)}</div>
         <div class="cells">${hours.map((h) => cell(s.hourly[h] || 0, h, rowMax)).join('')}</div><div class="cc">${s.count}</div></div>`; }).join('')}</div>
-      <div class="crow axis"><div class="cn"></div><div class="cells">${hours.map((h) => `<em>${h % 3 === 0 ? h : ''}</em>`).join('')}</div><div class="cc"></div></div>
-    </div>`;
+      <div class="crow axis"><div class="ci"></div><div class="cn"></div><div class="cells">${hours.map((h) => `<em>${h % 3 === 0 ? String(h).padStart(2, '0') : ''}</em>`).join('')}</div><div class="cc"></div></div>
+    </div><div class="ev-foot bare"><span class="ev-tot">${d.species_today} species · ${d.detections_today} calls · calls per hour, darker is busier</span></div>${foot(d)}`;
 }
 
 function plate(d, showSci, tone) {
@@ -625,72 +642,74 @@ export default function render(shadow, ctx) {
       .kick { font-size: 2.6cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--alert); }
       .credit, .bcredit { font-size: 1.9cqmin; opacity: .6; padding: 0.8cqmin 2.4cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-      /* header shared by list, gallery, chart */
-      .head { display: flex; align-items: stretch; flex: 0 0 auto; border-bottom: var(--rule) solid var(--ink); min-height: 11cqmin; }
-      .hmark { background: var(--ink); color: var(--paper); width: 11cqmin; padding: 2.2cqmin; flex: 0 0 auto; }
-      .htxt { flex: 1; min-width: 0; padding: 1.4cqmin 2.6cqmin; display: flex; flex-direction: column; justify-content: center; }
-      .ht { font-weight: 900; font-size: 4.4cqmin; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .hs { font-size: 2.3cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .6; margin-top: .6cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .hstat { padding: 1cqmin 2.6cqmin; display: flex; flex-direction: column; justify-content: center; align-items: flex-end; background: var(--muted); }
-      .hstat.a { background: var(--hi); }
-      .hstat b { font-weight: 900; font-size: 5.6cqmin; line-height: 1; }
-      .hstat span { font-size: 2.1cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+      /* the everyday pages: list, latest, gallery and chart are printed
+         matter like the plates, on the same paper in the same type */
+      .lay-list, .lay-latest, .lay-gallery, .lay-chart { background: #f3ead6; color: #2a2116; font-family: var(--bb-serif); --paper: #f3ead6; --ink: #2a2116; --muted: #d9cba5; }
+      .ph { display: flex; justify-content: space-between; align-items: baseline; gap: 2cqmin; padding: 0 0 .6cqmin; }
+      .ph-k { font-family: var(--bb-sc); font-size: 2.5cqmin; letter-spacing: .13em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ph-d { font-weight: 400; font-size: 4.2cqmin; letter-spacing: .04em; white-space: nowrap; }
+      .ph-rule { border-top: 1px solid var(--ink); position: relative; margin-bottom: .8cqmin; flex: 0 0 auto; }
+      .ph-rule::after { content: ""; position: absolute; left: 0; right: 0; top: 2px; border-top: 1px solid var(--ink); }
+      .lay-gallery .ph, .lay-chart .ph { padding: 3cqmin 3.4cqmin .6cqmin; }
+      .lay-gallery .ph-rule, .lay-chart .ph-rule { margin: 0 3.4cqmin .8cqmin; }
 
-      /* list */
-      .rows { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; overflow: hidden; }
-      .row { flex: 1 1 0; width: 100%; box-sizing: border-box; min-height: 8cqmin; max-height: 14cqmin; display: flex; align-items: center; gap: 2.4cqmin; padding: 0 2.6cqmin; border-top: calc(var(--rule) * .6) solid var(--ink); }
-      .row:first-child { border-top: 0; }
-      .rpic { height: 78%; aspect-ratio: 1; flex: 0 0 auto; overflow: hidden; }
-      /* padding in % is of the row's width here, so the icon box sizes in cqmin */
-      .rpic.nopic { padding: 1.2cqmin; box-sizing: border-box; }
-      .rnm { flex: 1; min-width: 0; }
-      .rcn { font-weight: 800; font-size: 3.6cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .rsn { font-size: 2.3cqmin; font-style: italic; opacity: .65; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .rago { font-size: 2.7cqmin; font-weight: 600; white-space: nowrap; }
-      .rct { font-size: 4.6cqmin; font-weight: 900; min-width: 9cqmin; text-align: right; }
-      .lfoot { flex: 0 0 auto; border-top: var(--rule) solid var(--ink); padding-top: 1cqmin; }
-      .strip { display: flex; gap: .5cqmin; height: 9cqmin; padding: 0 2.6cqmin; }
+      /* list and latest: the hero to the edge, the rest beside it */
+      .ev { flex: 1; min-height: 0; display: flex; }
+      .ev-hero { flex: 0 0 40%; min-width: 0; position: relative; }
+      .ev-hero.big { flex-basis: 54%; }
+      .ev-plate, .ev-photo, .ev-nopic { position: absolute; inset: 0; overflow: hidden; }
+      .ev-plate img, .ev-photo img { width: 100%; height: 100%; object-fit: cover; }
+      .ev-plate img { mix-blend-mode: multiply; }
+      .ev-photo { mask-image: linear-gradient(to right, #000 78%, transparent 100%); -webkit-mask-image: linear-gradient(to right, #000 78%, transparent 100%); }
+      .ev-nopic { padding: 26% 26% 40%; color: #cdbf9d; }
+      .ev-cap { position: absolute; left: 3.4cqmin; right: 2cqmin; bottom: 3cqmin; z-index: 2; }
+      /* the paper rises over the foot of the picture so the name sits on paper, not on feathers */
+      .ev-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 46%; background: linear-gradient(to top, var(--paper) 42%, rgba(243, 234, 214, 0)); z-index: 1; }
+      .ev-hero.big .ev-fade { height: 46%; background: linear-gradient(to top, var(--paper) 50%, rgba(243, 234, 214, 0)); }
+      .ev-kick { font-family: var(--bb-sc); font-size: 2.3cqmin; letter-spacing: .14em; color: #6b5a3a; }
+      .ev-name { font-family: var(--bb-sc); font-size: 6.6cqmin; line-height: 1.02; letter-spacing: .02em; margin-top: .4cqmin; }
+      .ev-hero.big .ev-name { font-size: 8.4cqmin; }
+      .ev-sub { font-style: italic; font-size: 2.9cqmin; margin-top: .6cqmin; }
+      .ev-song { width: 60%; height: 4cqmin; margin-top: 1cqmin; }
+      .ev-side { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 3cqmin 3.4cqmin 2.2cqmin 3cqmin; }
+      .ev-rows { flex: 1 1 0; min-height: 0; }
+      .ev-row { display: flex; align-items: baseline; gap: 2cqmin; padding: 1.3cqmin 0; border-bottom: 1px solid #c9b98f; }
+      .ev-row.small { padding: .9cqmin 0; }
+      .ev-rn { flex: 1; min-width: 0; }
+      .ev-rname { font-family: var(--bb-sc); font-size: 3.7cqmin; letter-spacing: .03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ev-row.small .ev-rname { font-size: 3.3cqmin; }
+      .ev-rsub { font-style: italic; font-size: 2.4cqmin; opacity: .75; margin-top: -.3cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ev-rct { font-size: 4.8cqmin; font-variant-numeric: tabular-nums; min-width: 7cqmin; text-align: right; }
+      .ev-row.small .ev-rct { font-size: 3.8cqmin; }
+      .ev-stats { display: flex; gap: 3cqmin; padding: 1cqmin 0 1.4cqmin; border-bottom: 1px solid #c9b98f; }
+      .ev-stats > div { flex: 0 0 auto; }
+      .ev-stats b { display: block; font-weight: 400; font-size: 6cqmin; line-height: 1; font-variant-numeric: tabular-nums; }
+      .ev-stats span { font-family: var(--bb-sc); font-size: 2cqmin; letter-spacing: .12em; }
+      .ev-also { font-family: var(--bb-sc); font-size: 2.3cqmin; letter-spacing: .14em; padding: 1.4cqmin 0 .4cqmin; }
+      .ev-foot { flex: 0 0 auto; display: flex; align-items: flex-end; gap: 2.4cqmin; margin-top: 1.4cqmin; }
+      .ev-foot.bare { padding: 0 3.4cqmin 1.6cqmin; justify-content: space-between; }
+      .ev-tot { font-family: var(--bb-sc); font-size: 2.3cqmin; letter-spacing: .12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .strip { flex: 1; display: flex; gap: .5cqmin; height: 6cqmin; border-bottom: 1px solid var(--ink); }
       .sb { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
-      .sb i { display: block; background: var(--muted); }
-      .sb i.on { background: var(--ink); }
-      .sb i.now { background: var(--alert); }
-      .sb em { font-style: normal; font-size: 1.8cqmin; font-weight: 700; height: 2.4cqmin; text-align: center; }
-      @container (max-height: 260px) { .rsn, .lfoot { display: none; } }
-
-      /* latest */
-      .lat { flex: 1; min-height: 0; display: flex; }
-      .lpic { flex: 0 0 58%; display: flex; flex-direction: column; min-width: 0; }
-      .lp { flex: 1; min-height: 0; overflow: hidden; }
-      .lp img { object-fit: cover; }
-      .lp.fit { padding: 2cqmin; }
-      .lcap { border-top: var(--rule) solid var(--ink); padding: 1.8cqmin 2.6cqmin 2cqmin; }
-      .lname { font-weight: 900; font-size: 7.4cqmin; line-height: 1.04; }
-      .lmeta { display: flex; gap: 2.6cqmin; font-size: 2.6cqmin; font-weight: 600; margin-top: .8cqmin; flex-wrap: wrap; }
-      .lmeta i { opacity: .7; }
-      .lside { flex: 1; min-width: 0; border-left: var(--rule) solid var(--ink); display: flex; flex-direction: column; }
-      .lstats { display: flex; border-bottom: var(--rule) solid var(--ink); }
-      .lstats > div { flex: 1; padding: 1.8cqmin 2.4cqmin; background: var(--muted); }
-      .lstats > .a { background: var(--hi); }
-      .lstats b { display: block; font-weight: 900; font-size: 6.4cqmin; line-height: 1; }
-      .lstats span { font-size: 2.1cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-      .lalso { flex: 1; min-height: 0; overflow: hidden; padding: 1cqmin 2.4cqmin 0; display: flex; flex-direction: column; }
-      /* a list that shows whole rows only: rows that do not fit wrap into a
-         second column, which sits outside the box and is never seen */
-      .fitrows { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; overflow: hidden; align-content: flex-start; }
-      .fitrows > * { width: 100%; flex: 0 0 auto; box-sizing: border-box; }
-      .cap { font-size: 2.2cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: .6cqmin 0 1cqmin; }
-      .arow { display: flex; gap: 1.4cqmin; align-items: baseline; padding: 1.2cqmin 0; border-top: calc(var(--rule) * .6) solid var(--ink); font-size: 3cqmin; font-weight: 700; }
-      .arow span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .arow b { font-weight: 900; font-size: 3.3cqmin; }
-      .lfoot2 { border-top: var(--rule) solid var(--ink); padding: 1.4cqmin 2.4cqmin; font-size: 2.1cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; opacity: .6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sb i { display: block; background: #d9cba5; }
+      .sb i.on { background: var(--ink); opacity: .72; }
+      .sb i.now { background: #b4351f; opacity: 1; }
+      .sb em { font-style: normal; font-family: var(--bb-sc); font-size: 1.7cqmin; height: 2.2cqmin; line-height: 2.2cqmin; text-align: center; white-space: nowrap; overflow: visible; }
+      .sb b { font-size: 1.8cqmin; text-align: center; }
+      .new { background: #b4351f; color: #fff; font-family: var(--bb-sc); font-weight: 400; vertical-align: .6cqmin; }
       @container (max-aspect-ratio: 1) {
-        .lat { flex-direction: column; }
-        .lpic { flex: 1 1 0; min-height: 0; }
-        .lside { flex: 0 0 44%; min-height: 0; border-left: 0; border-top: var(--rule) solid var(--ink); }
+        .ev { flex-direction: column; }
+        .ev-hero { flex: 0 0 44%; }
+        .ev-hero.big { flex-basis: 52%; }
+        .ev-photo { mask-image: linear-gradient(to bottom, #000 76%, transparent 100%); -webkit-mask-image: linear-gradient(to bottom, #000 76%, transparent 100%); }
+        .ev-fade { height: 40%; }
+        .ev-side { padding-top: 2cqmin; }
+        .ev-name { font-size: 7.2cqmin; }
       }
+      @container (max-height: 260px) { .ev-rsub, .ev-foot .strip { display: none; } }
 
-      /* gallery */
-      .grid { flex: 1; min-height: 0; display: grid; gap: 1.6cqmin; padding: 1.8cqmin 2cqmin 1cqmin; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; }
+      /* gallery: specimen cards on mounts */
+      .grid { flex: 1; min-height: 0; display: grid; gap: 2cqmin; padding: .6cqmin 3.4cqmin 1cqmin; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 1fr; }
       .grid.n1 { grid-template-columns: 1fr; } .grid.n2 { grid-template-columns: repeat(2, 1fr); }
       .grid.n3 { grid-template-columns: repeat(3, 1fr); } .grid.n4 { grid-template-columns: repeat(4, 1fr); }
       .grid.n5, .grid.n6 { grid-template-columns: repeat(3, 1fr); }
@@ -700,30 +719,49 @@ export default function render(shadow, ctx) {
         .grid { grid-template-columns: repeat(2, 1fr) !important; }
         .grid.n7, .grid.n8, .grid.n9, .grid.n10, .grid.n11, .grid.n12 { grid-template-columns: repeat(3, 1fr) !important; }
       }
-      .tile { position: relative; border: calc(var(--rule) * .7) solid var(--ink); display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: #f6efdc; }
-      .tpic { flex: 1; min-height: 0; overflow: hidden; }
-      .tpic img { object-fit: cover; }
-      .tpic.fit { padding: 1cqmin; }
-      .tcap { display: flex; gap: 1cqmin; align-items: baseline; padding: .8cqmin 1.4cqmin; border-top: calc(var(--rule) * .7) solid var(--ink); background: var(--paper); font-size: 2.5cqmin; font-weight: 800; }
-      .tcap span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .tcap b { font-size: 3cqmin; font-weight: 900; }
-      .isnew .tcap { background: var(--alert); color: #fff; }
-      .tnew { position: absolute; top: 0; left: 0; background: var(--alert); color: #fff; font-size: 2cqmin; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: .5cqmin 1.2cqmin; }
+      .gc { background: #fffdf6; box-shadow: 0 0 0 1px #c9b98f; padding: 1.2cqmin 1.2cqmin 1cqmin; display: flex; flex-direction: column; min-height: 0; text-align: center; }
+      .gc-p { flex: 1; min-height: 0; overflow: hidden; }
+      .gc-p img { object-fit: cover; }
+      .gc-p.fit { padding: .6cqmin; }
+      .gc-p.fit img { mix-blend-mode: multiply; }
+      .gc-n { font-family: var(--bb-sc); font-size: 2.7cqmin; letter-spacing: .03em; margin-top: .8cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .gc-s { font-style: italic; font-size: 1.9cqmin; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .gc-c { font-size: 3.2cqmin; margin-top: .2cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .gc-c span { font-size: 1.9cqmin; font-style: italic; opacity: .75; }
+      .gc.isnew { box-shadow: 0 0 0 1px #c9b98f, inset 0 0 0 2px #b4351f; }
+      @container (max-height: 320px) { .gc-s, .gc-c span { display: none; } }
 
-      /* chart */
-      .chart { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 1.6cqmin 2.6cqmin 1cqmin; gap: .8cqmin; }
-      .crows { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; overflow: hidden; gap: .8cqmin; }
-      .crow { flex: 1 1 0; width: 100%; min-height: 4.4cqmin; max-height: 8cqmin; display: flex; align-items: center; gap: 2cqmin; }
-      .crow .cn { width: 30%; font-weight: 800; font-size: 3cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .cells { flex: 1; display: flex; gap: .35cqmin; height: 72%; }
-      .cells i { flex: 1; background: var(--muted); }
-      .cells i.l1 { background: color-mix(in srgb, var(--ink) 30%, var(--paper)); }
-      .cells i.l2 { background: color-mix(in srgb, var(--ink) 62%, var(--paper)); }
-      .cells i.l3 { background: var(--ink); }
-      .cells i.fut { background: repeating-linear-gradient(45deg, var(--paper) 0 3px, var(--muted) 3px 5px); }
-      .crow .cc { width: 8cqmin; text-align: right; font-weight: 900; font-size: 3.6cqmin; }
-      .crow.axis { flex: 0 0 auto; height: 3cqmin; }
-      .axis em { flex: 1; font-style: normal; font-size: 2cqmin; font-weight: 700; }
+      /* chart: a ledger of calls per hour */
+      .chart { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 3.4cqmin; gap: .6cqmin; }
+      .crows { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; overflow: hidden; }
+      .crow { flex: 1 1 0; width: 100%; min-height: 4.4cqmin; max-height: 13cqmin; display: flex; align-items: center; gap: 1.6cqmin; border-bottom: 1px solid #c9b98f; }
+      .crow .ci { width: 3.2cqmin; font-size: 2.2cqmin; opacity: .6; }
+      .crow .cn { width: 30%; font-family: var(--bb-sc); font-size: 3.1cqmin; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .cells { flex: 1; display: flex; gap: .35cqmin; height: 58%; }
+      .cells i { flex: 1; background: transparent; box-shadow: inset 0 -1px 0 #d9cba5; }
+      .cells i.l1 { background: color-mix(in srgb, var(--ink) 30%, var(--paper)); box-shadow: none; }
+      .cells i.l2 { background: color-mix(in srgb, var(--ink) 62%, var(--paper)); box-shadow: none; }
+      .cells i.l3 { background: var(--ink); box-shadow: none; }
+      .cells i.fut { background: repeating-linear-gradient(45deg, transparent 0 3px, #d9cba5 3px 4px); box-shadow: none; }
+      .cells b { display: block; font-size: 1.9cqmin; text-align: center; line-height: 1; color: var(--paper); mix-blend-mode: difference; }
+      .crow .cc { width: 8cqmin; text-align: right; font-size: 3.8cqmin; font-variant-numeric: tabular-nums; }
+      .crow.axis { flex: 0 0 auto; height: 3.2cqmin; border-bottom: 0; }
+      .axis em { flex: 1; font-style: normal; font-family: var(--bb-sc); font-size: 1.9cqmin; letter-spacing: .08em; }
+
+      /* greyscale and mono panels: white paper, black ink */
+      .lv-gray16 .lay-list, .lv-gray4 .lay-list, .lv-mono .lay-list, .lv-gray16 .lay-latest, .lv-gray4 .lay-latest, .lv-mono .lay-latest,
+      .lv-gray16 .lay-gallery, .lv-gray4 .lay-gallery, .lv-mono .lay-gallery, .lv-gray16 .lay-chart, .lv-gray4 .lay-chart, .lv-mono .lay-chart { background: #fff; color: #000; --paper: #fff; --ink: #000; }
+      .lv-gray16 .ev-fade, .lv-gray4 .ev-fade, .lv-mono .ev-fade { background: linear-gradient(to top, #fff 42%, rgba(255, 255, 255, 0)); }
+      .lv-gray16 .ev-kick, .lv-gray4 .ev-kick, .lv-mono .ev-kick { color: #000; }
+      .lv-gray16 .gc, .lv-gray4 .gc, .lv-mono .gc { background: #fff; box-shadow: 0 0 0 1px #000; }
+      .lv-gray16 .ev-row, .lv-gray4 .ev-row, .lv-mono .ev-row, .lv-gray16 .crow, .lv-gray4 .crow, .lv-mono .crow, .lv-gray16 .ev-stats, .lv-gray4 .ev-stats, .lv-mono .ev-stats { border-bottom-color: #000; }
+      .lv-gray16 .sb i.now, .lv-gray4 .sb i.now, .lv-mono .sb i.now, .lv-gray16 .new, .lv-gray4 .new, .lv-mono .new { background: #000; }
+      .lv-mono .ev-name, .lv-mono .ev-rname, .lv-mono .gc-n, .lv-mono .crow .cn { -webkit-text-stroke: .35px currentColor; }
+
+      /* the empty and error pages */
+      .msg { font-family: var(--bb-serif); }
+      .msg-t { font-family: var(--bb-sc); font-weight: 400; }
+      .msg-b { font-weight: 400; font-style: italic; }
 
       /* plate: a page from the book */
       .lay-plate { background: #f3ead6; color: #2a2116; }

@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 47 styles or your own prompt. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -83,19 +83,19 @@
       "choices": [
         {
           "value": "list",
-          "label": "Field log: today's birds as a list"
+          "label": "Field log: the bird just heard, the rest named beside it"
         },
         {
           "value": "latest",
-          "label": "Latest visitor: the bird just heard, and today's tally"
+          "label": "Latest visitor: the bird just heard, large, with today's tally"
         },
         {
           "value": "gallery",
-          "label": "Gallery: a card for each bird"
+          "label": "Gallery: a specimen card for each bird"
         },
         {
           "value": "chart",
-          "label": "Day chart: who called in which hour"
+          "label": "Day chart: a ledger of who called in which hour"
         },
         {
           "value": "plate",
@@ -213,6 +213,7 @@
       ],
       "show_if": {
         "layout": [
+          "list",
           "latest",
           "plate",
           "bleed"
@@ -227,6 +228,7 @@
       "help": "A small line under the bird's name tracing its latest call, from BirdNET-Go's sonogram of the detection (a made-up one in the demo garden).",
       "show_if": {
         "layout": [
+          "list",
           "latest",
           "plate",
           "bleed"
@@ -935,9 +937,9 @@
     {
       "name": "font",
       "type": "select",
-      "label": "Type on the printed looks",
+      "label": "Type",
       "default": "classic",
-      "help": "The typeface on the book plate, the full-bleed captions and the cluster pages. The field log, latest visitor, gallery and day chart follow the panel's theme. Classic is an old English book face; the others are bundled too, and Panel theme uses whatever the dashboard uses.",
+      "help": "The typeface on every page. Classic is the engraved face the plates were set in; the panel's own theme font is the last choice.",
       "choices": [
         {
           "value": "classic",
@@ -963,15 +965,7 @@
           "value": "theme",
           "label": "Panel theme"
         }
-      ],
-      "show_if": {
-        "layout": [
-          "plate",
-          "bleed",
-          "cluster",
-          "chorus"
-        ]
-      }
+      ]
     },
     {
       "name": "night",
