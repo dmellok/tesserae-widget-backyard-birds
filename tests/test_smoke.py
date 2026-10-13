@@ -291,10 +291,10 @@ def test_generated_once_per_species(tmp_path, offline):
             )
     # the first render does not wait for fal: it shows a photo and says so
     assert first["latest"]["pic"]["kind"] == "photo"
-    assert any(n.startswith("Painting the ") for n in first["notices"])
+    assert any(n.startswith("Painting the ") for n in first["status"])
     assert r["latest"]["pic"]["kind"] == "generated"
     assert "AI painting" in r["latest"]["pic"]["credit"]
-    assert not r["notices"]
+    assert not r["notices"] and not r["status"]
     assert sum("fal.run" in u for u in offline) == 1, "painted once, then kept"
 
 
@@ -690,8 +690,8 @@ def test_daily_limit_is_a_setting(tmp_path, offline):
             ctx={"data_dir": str(tmp_path)},
         )
         _settle()
-    assert any("limit of 12" in n for n in at_default["notices"])
-    assert any(n.startswith("Painting the ") for n in raised["notices"])
+    assert any("limit of 12" in n for n in at_default["status"])
+    assert any(n.startswith("Painting the ") for n in raised["status"])
     assert len(offline.bodies) == 1
     assert server._daily_cap({"gen_daily_cap": "7"}) == 12, "only the offered limits"
 
@@ -729,3 +729,44 @@ def test_cluster_looks_build_a_page(tmp_path, offline, mode):
     if mode == "notebook":
         assert "font-family:'Caveat'" in r["font_css"]
     assert len(offline.bodies) == 3, "no blend for a printed page"
+
+
+def test_progress_is_not_printed_on_the_panel(tmp_path, offline):
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "layout": "bleed", "pictures": "gen"},
+            {"fal_api_key": "k"},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        _settle()
+    assert any(n.startswith("Painting the ") for n in r["status"])
+    assert not any(n.startswith("Painting") for n in r["notices"])
+
+
+def test_white_bird_is_cut_out_whole_and_a_wash_dropped():
+    from PIL import ImageDraw, ImageFilter
+
+    paper = (243, 234, 214)
+    im = Image.new("RGB", (600, 800), paper)
+    d = ImageDraw.Draw(im)
+    for y in range(520, 640):  # a grey wash under the bird
+        t = (y - 520) / 120
+        d.line((140, y, 480, y), fill=tuple(int(p * (1 - t) + 180 * t) for p in paper))
+    d.ellipse((200, 240, 420, 510), fill=(252, 250, 244), outline=(90, 80, 70), width=3)
+    d.line((120, 530, 520, 490), fill=(110, 80, 50), width=12)
+    buf = io.BytesIO()
+    im.filter(ImageFilter.GaussianBlur(0.8)).save(buf, "JPEG", quality=90)
+    cut, mask, _paper = server._cutout_masked(buf.getvalue())
+    import numpy as np
+
+    m = np.asarray(mask) > 128
+    # the crop is the bird and perch, not the wash below them
+    assert cut.height < 360, cut.size
+    # the white body is inside the mask, not just its outline
+    assert (
+        m[
+            m.shape[0] // 2 - 40 : m.shape[0] // 2,
+            m.shape[1] // 2 - 20 : m.shape[1] // 2 + 20,
+        ].mean()
+        > 0.95
+    )

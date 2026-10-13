@@ -176,6 +176,11 @@ def _int(value: Any, default: int, lo: int, hi: int) -> int:
         return default
 
 
+def _is_progress(note: str) -> bool:
+    """True for a notice about work under way rather than one to act on."""
+    return note.startswith(("Painting ", "AI paintings: today's limit"))
+
+
 def _choice(value: Any, allowed: tuple[str, ...]) -> str:
     v = str(value or "").strip()
     return v if v in allowed else allowed[0]
@@ -769,7 +774,7 @@ CLUSTER_MAX = 6
 # into one scene by a final AI pass.
 CLUSTER_STYLES = ("sheet", "numbered", "wreath", "notebook", "drawer", "blend")
 # Layout version of the specimen sheet, part of its cache tag.
-SHEET_LAYOUT = "sheet3"
+SHEET_LAYOUT = "sheet4"
 # Most birds a specimen sheet shows.
 SHEET_MAX = 24
 # Label type size as a fraction of the sheet's height.
@@ -1505,6 +1510,79 @@ def _size_factor(sci: str, lengths: dict[str, float]) -> float:
     return max(0.55, min(2.0, (cm / 20.0) ** 0.75))
 
 
+def _bird_mask(im: Any, paper: tuple[int, int, int]) -> Any:
+    """The bird (and its perch) in a painting on plain paper, as an L mask.
+
+    The paper is found by spreading in from the picture's edges over
+    anything that looks like paper: close to the paper colour, or a smooth,
+    grey, light wash such as a painted ground or shadow. What the spread
+    cannot reach is the bird, so a white bird enclosed by its own outline
+    stays whole even though its feathers are the paper's colour. Worked on a
+    small copy for speed, then scaled back up."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    w, h = im.size
+    k = min(1.0, 320 / max(w, h))
+    small = im.resize(
+        (max(1, int(w * k)), max(1, int(h * k))), Image.Resampling.BILINEAR
+    )
+    a = np.asarray(small).astype(np.int16)
+    diff = np.abs(a - np.array(paper, dtype=np.int16)).max(axis=2)
+    lum = small.convert("L")
+    hp = np.abs(
+        np.asarray(lum, dtype=np.int16)
+        - np.asarray(lum.filter(ImageFilter.GaussianBlur(2)), dtype=np.int16)
+    )
+    texture = np.asarray(
+        Image.fromarray(np.clip(hp * 8, 0, 255).astype(np.uint8)).filter(
+            ImageFilter.BoxBlur(2)
+        )
+    )
+    sat = a.max(axis=2) - a.min(axis=2)
+    L = np.asarray(lum, dtype=np.int16)
+    paper_l = int(0.299 * paper[0] + 0.587 * paper[1] + 0.114 * paper[2])
+    paperlike = diff < 24
+    washlike = (texture < 24) & (sat < 26) & (L > paper_l - 95)
+    cand = paperlike | washlike
+    bg = np.zeros_like(cand)
+    bg[0, :], bg[-1, :], bg[:, 0], bg[:, -1] = (
+        cand[0, :],
+        cand[-1, :],
+        cand[:, 0],
+        cand[:, -1],
+    )
+    for _ in range(4 * max(bg.shape)):
+        grown = bg.copy()
+        grown[1:, :] |= bg[:-1, :]
+        grown[:-1, :] |= bg[1:, :]
+        grown[:, 1:] |= bg[:, :-1]
+        grown[:, :-1] |= bg[:, 1:]
+        grown &= cand
+        if (grown == bg).all():
+            break
+        bg = grown
+    # a wash's own hard edge is texture, not paper: let the paper spread a
+    # few more steps from the wash (never from plain paper, so a bird's pale
+    # edge against plain paper is left alone) into pale grey pixels
+    edge = (sat < 26) & (L > paper_l - 95)
+    reach = bg & washlike & ~paperlike
+    for _ in range(8):
+        grown = reach.copy()
+        grown[1:, :] |= reach[:-1, :]
+        grown[:-1, :] |= reach[1:, :]
+        grown[:, 1:] |= reach[:, :-1]
+        grown[:, :-1] |= reach[:, 1:]
+        reach = grown & (edge | bg)
+    bg = bg | reach
+    obj = Image.fromarray(((~bg) * 255).astype(np.uint8))
+    # drop specks, close pinholes, back to full size
+    obj = obj.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(5))
+    return obj.resize((w, h), Image.Resampling.BILINEAR).point(
+        lambda v: 255 if v > 127 else 0
+    )
+
+
 def _cutout_masked(raw: bytes) -> tuple[Any, Any, tuple[int, int, int]] | None:
     """(the bird cropped from its painting with the paper turned white and
     everything outside its outline whitened too, its mask, the paper
@@ -1526,11 +1604,14 @@ def _cutout_masked(raw: bytes) -> tuple[Any, Any, tuple[int, int, int]] | None:
     edge.paste(im.crop((0, 0, w, b)), (0, 0))
     edge.paste(im.crop((0, h - b, w, h)), (0, b))
     paper = tuple(int(v) for v in ImageStat.Stat(edge).median)
-    diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert("L")
-    hard = diff.point(lambda v: 255 if v > 30 else 0)
-    # close small gaps, drop specks, then soften the edge
-    hard = hard.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(5))
-    box = hard.getbbox()
+    try:
+        hard = _bird_mask(im, paper)
+    except ImportError:  # pragma: no cover - numpy ships with Tesserae
+        diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert("L")
+        hard = diff.point(lambda v: 255 if v > 30 else 0)
+        hard = hard.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(5))
+    # the crop box ignores specks: measure it on a slightly eroded mask
+    box = hard.filter(ImageFilter.MinFilter(7)).getbbox() or hard.getbbox()
     if not box:
         return None
     pad = max(w, h) // 60
@@ -2155,7 +2236,11 @@ def fetch(
         "date": now.strftime("%a %d %b"),
         "date_iso": now.strftime("%Y-%m-%d"),
         "credits": credits,
-        "notices": notices,
+        # what needs the owner (no key, a failure) is printed on the panel;
+        # progress (a painting under way, the day's limit reached) is not,
+        # and shows on the paintings page instead
+        "notices": [n for n in notices if not _is_progress(n)],
+        "status": [n for n in notices if _is_progress(n)],
         "font_css": _font_css(groups),
         "empty": not species,
     }

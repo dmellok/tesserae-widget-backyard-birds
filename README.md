@@ -76,7 +76,7 @@ Four more looks print the same paintings differently:
 
 **Blended scene** shows up to six birds as one picture: once all of them are painted they are arranged in an oval and one more fal.ai pass repaints them together, with one branch, one background and one light. The blend is kept and made again when the busiest birds change, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default), at about US$0.04 a blend.
 
-AI paintings are asked for as a single bird and its perch alone on plain paper, so they cut out cleanly for both.
+AI paintings are asked for as a single bird and its perch alone on plain paper. The cut-out finds the paper by spreading in from the picture's edges, so a white bird outlined on white paper stays whole, and a painted grey ground or shadow under the bird is dropped with the paper. Progress notes (a painting under way, the day's limit reached) show on the paintings page, not on the panel.
 
 ### Managing the paintings
 
