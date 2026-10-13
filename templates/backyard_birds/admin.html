@@ -38,11 +38,18 @@
     <div class="field">
       <label for="bb-style">Art style</label>
       <select id="bb-style" name="style">
-        {% for value, label in g.styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        {% for group, styles in g.style_groups %}<optgroup label="{{ group }}">{% for value, label in styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
       </select>
     </div>
     <div class="actions">{{ button('Paint', icon='paint-brush', disabled=not has_key) }}</div>
   </form>
+  <p class="bb-meta">Or fill a whole style at once: every bird BirdNET-Go has reported (the demo gardens' birds until then), skipping the ones already painted, one after another within the daily limit.</p>
+    <form method="post" action="{{ url_for('backyard_birds_admin.style_paint') }}" class="bb-bulk bb-batch">
+      <select name="art" aria-label="Art style to paint every bird in">
+        {% for group, styles in g.style_groups %}<optgroup label="{{ group }}">{% for value, label in styles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
+      </select>
+      <button type="submit" class="ghost" {% if not has_key %}disabled{% endif %} title="Every bird BirdNET-Go has reported, skipping those already painted, one after another within the daily limit"><i class="ph ph-paint-brush" aria-hidden="true"></i> Paint every bird in this style</button>
+    </form>
 </section>
 
 <section class="card">

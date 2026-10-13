@@ -856,7 +856,7 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
     ),
     "origami": (
         "Origami",
-        "a folded paper origami model of the bird, made from coloured paper in the species' own colours, with crisp creases, visible folds and soft studio light, on a plain pale paper background",
+        "a flat, colourful origami illustration of the bird: folded from bright paper in bold flat planes of the species' own colours, every facet a clean flat shape with crisp straight creases drawn as fine lines, no shading, no gradients and no studio light, graphic and poster-like, on a plain pale paper background",
     ),
     "felt": (
         "Needle felt",
@@ -940,6 +940,39 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
     ),
 }
 GEN_STYLE_IDS = tuple(GEN_STYLES)
+# The styles in the groups the pickers show them in.
+GEN_STYLE_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "Plates and prints",
+        (
+            "gould",
+            "audubon",
+            "woodblock",
+            "engraving",
+            "linocut",
+            "sketch",
+            "risograph",
+            "screenprint",
+            "artnouveau",
+        ),
+    ),
+    ("Fine art", ("watercolour", "sumie", "pointillism", "charcoal")),
+    (
+        "Crafts",
+        (
+            "origami",
+            "papercut",
+            "embroidery",
+            "felt",
+            "clay",
+            "bricks",
+            "stainedglass",
+            "mosaic",
+        ),
+    ),
+    ("Playful", ("anime", "kawaii", "pixel")),
+    ("Jokes", ("grumpy", "hats", "superhero", "portrait", "pirate")),
+)
 GEN_BLEND = (
     "This picture is a collage of {n} birds, each painted on its own: {birds}. Repaint it "
     "as one seamless picture, {style}, with all the birds together in a single natural "
@@ -1238,6 +1271,46 @@ def _start_painting(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
     ctx = contextvars.copy_context()
     threading.Thread(
         target=ctx.run, args=(run,), name=f"birds-paint-{key}", daemon=True
+    ).start()
+    return True
+
+
+_BATCH: set[str] = set()
+
+
+def _start_batch(jobs: list[dict[str, Any]], data_dir: Path, fal_key: str) -> bool:
+    """Paint ``jobs`` one after another in one background thread, stopping at
+    the daily cap. False when a batch in this style is already running. Each
+    painting goes through _start_painting, so the admin page and the widget
+    see it as a painting under way like any other."""
+    if not jobs:
+        return False
+    tag = jobs[0].get("style") or "gould"
+    with _PAINTING_LOCK:
+        if tag in _BATCH:
+            return False
+        _BATCH.add(tag)
+    folder = _gen_dir(data_dir)
+
+    def run() -> None:
+        try:
+            for job in jobs:
+                if _budget_used(folder) >= _CAP.get():
+                    break
+                if not _start_painting(job, data_dir, fal_key):
+                    continue
+                while True:
+                    time.sleep(0.5)
+                    with _PAINTING_LOCK:
+                        if job["key"] not in _PAINTING:
+                            break
+        finally:
+            with _PAINTING_LOCK:
+                _BATCH.discard(tag)
+
+    ctx = contextvars.copy_context()
+    threading.Thread(
+        target=ctx.run, args=(run,), name=f"birds-batch-{tag}", daemon=True
     ).start()
     return True
 
@@ -3332,6 +3405,9 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
         "cap": _CAP.get(),
         "running": sorted(running),
         "styles": [(k, v[0]) for k, v in GEN_STYLES.items()],
+        "style_groups": [
+            (g, [(k, GEN_STYLES[k][0]) for k in ids]) for g, ids in GEN_STYLE_GROUPS
+        ],
     }
 
 
@@ -3585,6 +3661,50 @@ def blueprint() -> Any:
             )
             with contextlib.suppress(OSError):
                 (_gen_dir(dd) / f"{_slug(sci)}--plate.jpg").unlink()
+        return back()
+
+    @bp.post("/style-paint")
+    def style_paint() -> Any:
+        """Paint every bird BirdNET-Go has reported (the demo gardens' birds
+        when none has been) in one style, skipping the ones already painted,
+        one after another within the daily limit."""
+        style = request.form.get("art", "")
+        if style not in GEN_STYLES:
+            abort(400)
+        key = fal_key()
+        if not key:
+            flash("Add a fal.ai key in this widget's settings first.", "warn")
+            return back()
+        folder = _gen_dir(data_dir())
+        birds = _known_birds(data_dir())
+        jobs = [
+            {"key": _pkey(_slug(sci), style), "style": style, "name": name, "sci": sci}
+            for name, sci in birds
+            if not (folder / f"{_pkey(_slug(sci), style)}.jpg").exists()
+        ]
+        label = GEN_STYLES[style][0]
+        room = max(0, _CAP.get() - _budget_used(folder))
+        if not jobs:
+            flash(f"Every known bird already has a painting in {label}.", "info")
+        elif not room:
+            flash(
+                f"Today's limit of {_CAP.get()} paintings is used up. Raise it in this widget's settings.",
+                "warn",
+            )
+        elif not _start_batch(jobs, data_dir(), key):
+            flash(f"{label} is already being painted for every bird.", "info")
+        else:
+            n = min(len(jobs), room)
+            flash(
+                f"Painting {n} bird{'s' if n != 1 else ''} in {label}, one after another"
+                + (
+                    f"; {len(jobs) - n} more wait for tomorrow's limit"
+                    if len(jobs) > n
+                    else ""
+                )
+                + ". Reload this page to watch them arrive.",
+                "success",
+            )
         return back()
 
     @bp.post("/style-delete")

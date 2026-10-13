@@ -776,7 +776,8 @@ def test_white_bird_is_cut_out_whole_and_a_wash_dropped():
 def test_every_art_style_makes_a_key_and_a_prompt():
     manifest = json.loads((ROOT / "plugin.json").read_text())
     offered = next(o for o in manifest["cell_options"] if o["name"] == "art_style")
-    assert [c["value"] for c in offered["choices"]] == list(server.GEN_STYLES)
+    # offered in groups (test_every_style_is_in_exactly_one_group checks the order)
+    assert sorted(c["value"] for c in offered["choices"]) == sorted(server.GEN_STYLES)
     for style, (label, how) in server.GEN_STYLES.items():
         key = server._pkey("turdus_merula", style)
         assert server._SLUG_RE.fullmatch(key), key
@@ -1064,3 +1065,39 @@ def test_blend_remembers_where_each_bird_sat(tmp_path, offline):
     for x, y, w, h in c["boxes"]:
         assert 0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1
     assert c["lines"] == ["name"]
+
+
+def test_every_style_is_in_exactly_one_group():
+    grouped = [k for _, ids in server.GEN_STYLE_GROUPS for k in ids]
+    assert sorted(grouped) == sorted(server.GEN_STYLES)
+    assert len(grouped) == len(set(grouped))
+    manifest = json.loads((server.HERE / "plugin.json").read_text(encoding="utf-8"))
+    opt = next(o for o in manifest["cell_options"] if o["name"] == "art_style")
+    assert [c["value"] for c in opt["choices"]] == grouped
+    groups = [c["group"] for c in opt["choices"]]
+    assert groups == sorted(groups, key=[g for g, _ in server.GEN_STYLE_GROUPS].index)
+
+
+def test_style_batch_paints_the_unpainted_birds_one_after_another(tmp_path, offline):
+    folder = server._gen_dir(tmp_path)
+    jobs = [
+        {
+            "key": server._pkey(server._slug(sci), "sumie"),
+            "style": "sumie",
+            "name": n,
+            "sci": sci,
+        }
+        for n, sci in [
+            ("Eurasian Blackbird", "Turdus merula"),
+            ("Great Tit", "Parus major"),
+        ]
+    ]
+    server._CAP.set(12)
+    assert server._start_batch(jobs, tmp_path, "k")
+    assert not server._start_batch(jobs, tmp_path, "k"), "one batch per style at a time"
+    for _ in range(50):
+        if not server._BATCH and not server._PAINTING:
+            break
+        time.sleep(0.1)
+    assert len(offline.bodies) == 2
+    assert all((folder / f"{j['key']}.jpg").exists() for j in jobs)

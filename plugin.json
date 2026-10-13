@@ -305,123 +305,152 @@
           "gen"
         ]
       },
-      "help": "How AI paintings are painted: natural history plates, prints and crafts (origami, risograph, stained glass, mosaic and more), fine art, playful looks (anime, pixel art, clay), and a few jokes. Each style keeps its own painting per bird, so switching back costs nothing. Ink and wash, pixel art, risograph, stained glass and the engraving survive black and white panels best.",
+      "help": "How AI paintings are painted, in groups: natural history plates and prints, fine art, crafts (origami, embroidery, stained glass and more), playful looks (anime, pixel art) and a few jokes. Each style keeps its own painting per bird, so switching back costs nothing. Ink and wash, pixel art, risograph, stained glass and the engraving survive black and white panels best.",
       "choices": [
         {
           "value": "gould",
-          "label": "Hand-coloured lithograph (Gould)"
+          "label": "Hand-coloured lithograph (Gould)",
+          "group": "Plates and prints"
         },
         {
           "value": "audubon",
-          "label": "Watercolour after Audubon"
+          "label": "Watercolour after Audubon",
+          "group": "Plates and prints"
         },
         {
           "value": "woodblock",
-          "label": "Japanese woodblock print"
+          "label": "Japanese woodblock print",
+          "group": "Plates and prints"
         },
         {
           "value": "engraving",
-          "label": "Black-ink engraving"
+          "label": "Black-ink engraving",
+          "group": "Plates and prints"
         },
         {
           "value": "linocut",
-          "label": "Linocut"
-        },
-        {
-          "value": "grumpy",
-          "label": "Grumpy (plate style)"
+          "label": "Linocut",
+          "group": "Plates and prints"
         },
         {
           "value": "sketch",
-          "label": "Field sketch"
-        },
-        {
-          "value": "anime",
-          "label": "Anime"
-        },
-        {
-          "value": "origami",
-          "label": "Origami"
-        },
-        {
-          "value": "felt",
-          "label": "Needle felt"
-        },
-        {
-          "value": "clay",
-          "label": "Clay figure"
-        },
-        {
-          "value": "kawaii",
-          "label": "Kawaii sticker"
-        },
-        {
-          "value": "pixel",
-          "label": "Pixel art"
-        },
-        {
-          "value": "bricks",
-          "label": "Brick-built"
+          "label": "Field sketch",
+          "group": "Plates and prints"
         },
         {
           "value": "risograph",
-          "label": "Risograph print"
+          "label": "Risograph print",
+          "group": "Plates and prints"
         },
         {
           "value": "screenprint",
-          "label": "Screen print poster"
-        },
-        {
-          "value": "embroidery",
-          "label": "Embroidery"
-        },
-        {
-          "value": "stainedglass",
-          "label": "Stained glass"
-        },
-        {
-          "value": "mosaic",
-          "label": "Mosaic"
-        },
-        {
-          "value": "papercut",
-          "label": "Paper cut"
-        },
-        {
-          "value": "sumie",
-          "label": "Ink and wash"
-        },
-        {
-          "value": "pointillism",
-          "label": "Pointillism"
+          "label": "Screen print poster",
+          "group": "Plates and prints"
         },
         {
           "value": "artnouveau",
-          "label": "Art Nouveau illustration"
+          "label": "Art Nouveau illustration",
+          "group": "Plates and prints"
         },
         {
           "value": "watercolour",
-          "label": "Modern watercolour"
+          "label": "Modern watercolour",
+          "group": "Fine art"
+        },
+        {
+          "value": "sumie",
+          "label": "Ink and wash",
+          "group": "Fine art"
+        },
+        {
+          "value": "pointillism",
+          "label": "Pointillism",
+          "group": "Fine art"
         },
         {
           "value": "charcoal",
-          "label": "Charcoal"
+          "label": "Charcoal",
+          "group": "Fine art"
+        },
+        {
+          "value": "origami",
+          "label": "Origami",
+          "group": "Crafts"
+        },
+        {
+          "value": "papercut",
+          "label": "Paper cut",
+          "group": "Crafts"
+        },
+        {
+          "value": "embroidery",
+          "label": "Embroidery",
+          "group": "Crafts"
+        },
+        {
+          "value": "felt",
+          "label": "Needle felt",
+          "group": "Crafts"
+        },
+        {
+          "value": "clay",
+          "label": "Clay figure",
+          "group": "Crafts"
+        },
+        {
+          "value": "bricks",
+          "label": "Brick-built",
+          "group": "Crafts"
+        },
+        {
+          "value": "stainedglass",
+          "label": "Stained glass",
+          "group": "Crafts"
+        },
+        {
+          "value": "mosaic",
+          "label": "Mosaic",
+          "group": "Crafts"
+        },
+        {
+          "value": "anime",
+          "label": "Anime",
+          "group": "Playful"
+        },
+        {
+          "value": "kawaii",
+          "label": "Kawaii sticker",
+          "group": "Playful"
+        },
+        {
+          "value": "pixel",
+          "label": "Pixel art",
+          "group": "Playful"
+        },
+        {
+          "value": "grumpy",
+          "label": "Grumpy (plate style)",
+          "group": "Jokes"
         },
         {
           "value": "hats",
-          "label": "Tiny hats"
+          "label": "Tiny hats",
+          "group": "Jokes"
         },
         {
           "value": "superhero",
-          "label": "Superhero"
+          "label": "Superhero",
+          "group": "Jokes"
         },
         {
           "value": "portrait",
-          "label": "Victorian portrait"
+          "label": "Victorian portrait",
+          "group": "Jokes"
         },
         {
           "value": "pirate",
-          "label": "Pirate"
+          "label": "Pirate",
+          "group": "Jokes"
         }
       ]
     },
