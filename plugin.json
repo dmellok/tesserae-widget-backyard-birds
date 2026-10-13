@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 29 styles. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -592,13 +592,71 @@
       }
     },
     {
+      "name": "cluster_text",
+      "type": "select",
+      "label": "Cluster: text",
+      "default": "key",
+      "show_if": {
+        "layout": "cluster"
+      },
+      "help": "Everything is the title and key beside or below the picture plus the text under each bird; under each bird alone drops the title and key; none is the picture alone.",
+      "choices": [
+        {
+          "value": "key",
+          "label": "Title, key and the text under each bird"
+        },
+        {
+          "value": "under",
+          "label": "Only the text under each bird"
+        },
+        {
+          "value": "none",
+          "label": "None, the picture alone"
+        }
+      ]
+    },
+    {
+      "name": "cluster_text_scale",
+      "type": "select",
+      "label": "Cluster: text size",
+      "default": "100",
+      "show_if": {
+        "layout": "cluster",
+        "cluster_text": {
+          "not": "none"
+        }
+      },
+      "choices": [
+        {
+          "value": "60",
+          "label": "60%"
+        },
+        {
+          "value": "80",
+          "label": "80%"
+        },
+        {
+          "value": "100",
+          "label": "100%"
+        },
+        {
+          "value": "125",
+          "label": "125%"
+        },
+        {
+          "value": "150",
+          "label": "150%"
+        }
+      ]
+    },
+    {
       "name": "cluster_labels",
       "type": "multiselect",
       "label": "Cluster: text under each bird",
       "default": [
         "name"
       ],
-      "help": "Printed over the page, not into the picture, in this order. Rarity is how often the bird has been heard in your garden over the last 30 days, from the widget's own log. New is BirdNET-Go's new-species flag.",
+      "help": "Printed over the page, not into the picture, in this order. On the fal.ai scene the labels sit where each bird was on the collage it was blended from, so keep each bird as painted for them to line up. Rarity is how often the bird has been heard in your garden over the last 30 days, from the widget's own log. New is BirdNET-Go's new-species flag.",
       "choices": [
         {
           "value": "name",
@@ -627,8 +685,8 @@
       ],
       "show_if": {
         "layout": "cluster",
-        "cluster_arrange": {
-          "not": "fal"
+        "cluster_text": {
+          "not": "none"
         }
       }
     },
@@ -1110,6 +1168,23 @@
           "not": "chart"
         }
       }
+    },
+    {
+      "name": "footer",
+      "type": "select",
+      "label": "Credits bar",
+      "default": "show",
+      "help": "The line at the bottom naming where the pictures came from, and anything that needs you (a missing key, a failed painting).",
+      "choices": [
+        {
+          "value": "show",
+          "label": "Show"
+        },
+        {
+          "value": "hide",
+          "label": "Hide"
+        }
+      ]
     },
     {
       "name": "location",

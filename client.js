@@ -239,6 +239,7 @@ function strip(d) {
 }
 
 function foot(d) {
+  if (d.footer === false) return '';
   const bits = [...(d.notices || []), ...(d.credits || [])];
   return bits.length ? `<div class="credit">${bits.map(esc).join(' · ')}</div>` : '';
 }
@@ -451,6 +452,9 @@ function sheet(d, C) {
   const mode = C.mode || 'sheet';
   const birds = C.birds || [];
   const lines = C.lines || ['name'];
+  /* key: everything; under: the text under each bird alone; none: the picture alone */
+  const text = d.cluster_text || 'key';
+  const keyed = mode === 'numbered' && text === 'key';
   /* the text under a bird is HTML over the picture, never baked into it,
      built from the lines the cell asks for */
   const labelOf = (b) => lines.map((l) => {
@@ -462,12 +466,12 @@ function sheet(d, C) {
     if (l === 'new') return b.new ? '<span class="sh-ln"><span class="sh-new">new</span></span>' : '';
     return '';
   }).join('');
-  const labels = birds.map((b, i) => {
+  const labels = text === 'none' ? '' : birds.map((b, i) => {
     const [x, y] = b.at || [b.box[0] + b.box[2] / 2, b.box[1] + b.box[3]];
-    const text = mode === 'numbered' ? String(i + 1) : labelOf(b);
-    if (!text) return '';
+    const t = keyed ? String(i + 1) : labelOf(b);
+    if (!t) return '';
     const rot = mode === 'notebook' && b.rot ? `;transform:translate(-50%, 15%) rotate(${-b.rot}deg)` : '';
-    return `<span class="sh-l" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%${rot}">${text}</span>`;
+    return `<span class="sh-l" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%${rot}">${t}</span>`;
   }).join('');
   const waiting = (C.waiting || []).length;
   const verb = C.waiting_verb || 'paint';
@@ -481,8 +485,8 @@ function sheet(d, C) {
   } else if (mode === 'drawer') {
     extra = `<div class="sh-plaque">${esc(d.label)} · ${esc(d.date)}</div>`;
   }
-  const page = `<div class="cl-sheet sh-s sh-${mode}" style="--r:${C.ratio};--lf:${C.label}"><img src="${C.pic.src}" alt="">${labels}${mode === 'numbered' ? '' : extra}</div>`;
-  if (mode === 'numbered') {
+  const page = `<div class="cl-sheet sh-s sh-${keyed ? 'numbered' : mode}" style="--r:${C.ratio};--lf:${(C.label || 0.017) * (d.text_scale || 1)}"><img src="${C.pic.src}" alt="">${labels}${text === 'key' && mode !== 'numbered' ? extra : ''}</div>`;
+  if (keyed) {
     const rows = birds.map((b, i) => `<li><em>${i + 1}.</em><span>${esc(b.name)}</span><b>${b.count}</b></li>`).join('');
     return `
     <div class="cl cl-numbered" style="background:${esc(C.pic.paper)}">
@@ -502,24 +506,42 @@ function cluster(d, showSci, tone) {
   const C = d.cluster || { birds: [] };
   if (C.sheet && C.pic) return sheet(d, C);
   const birds = C.birds || [];
-  const numbered = !C.pic;
+  const text = d.cluster_text || 'key';
+  const numbered = !C.pic && text === 'key';
+  /* on the blended scene (or the collage standing in for it) the labels go
+     where each bird sat on the collage; on the montage, under each tile */
+  const lines = C.lines || ['name'];
+  const labelOf = (b) => lines.map((l) => {
+    if (l === 'name') return `<span class="sh-ln">${esc(b.name)}</span>`;
+    if (l === 'sci') return b.sci ? `<span class="sh-ln sh-sci">${esc(b.sci)}</span>` : '';
+    if (l === 'count') return `<span class="sh-ln sh-sm">${b.count} call${b.count === 1 ? '' : 's'} to-day</span>`;
+    return '';
+  }).join('');
+  const boxes = Array.isArray(C.boxes) && C.boxes.length === birds.length ? C.boxes : null;
+  const labels = text !== 'none' && boxes ? birds.map((b, i) => {
+    const [x, y, w, h] = boxes[i];
+    const t = labelOf(b);
+    return t ? `<span class="sh-l" style="left:${((x + w / 2) * 100).toFixed(2)}%;top:${((y + h) * 100).toFixed(2)}%">${t}</span>` : '';
+  }).join('') : '';
+  const caption = (b, i) => (text === 'none' ? '' : `<figcaption>${numbered ? i + 1 : esc(b.name)}</figcaption>`);
   const art = C.pic
-    ? `<div class="cl-sheet" style="--r:${C.aspect === '3:4' ? 0.75 : 4 / 3}"><img src="${C.pic.src}" alt=""></div>`
+    ? `<div class="cl-sheet sh-s" style="--r:${C.aspect === '3:4' ? 0.75 : 4 / 3};--lf:${(C.label || 0.017) * (d.text_scale || 1)}"><img src="${C.pic.src}" alt="">${labels}</div>`
     : `<div class="cl-mont n${Math.min(birds.length, 6)}">${birds.map((b, i) => `
-        <figure>${pic(b.pic, 'cl-tile', tone)}<figcaption>${i + 1}</figcaption></figure>`).join('')}</div>`;
+        <figure>${pic(b.pic, 'cl-tile', tone)}${caption(b, i)}</figure>`).join('')}</div>`;
   const rows = birds.map((b, i) => `
       <li>${numbered ? `<em>${i + 1}.</em>` : ''}<span>${esc(b.name)}${showSci && b.sci ? `<i>${esc(b.sci)}</i>` : ''}</span><b>${b.count}</b></li>`).join('');
   const waiting = (C.waiting || []).length ? `<div class="cl-f">Still to paint: ${C.waiting.map(esc).join(', ')}</div>` : '';
   const paper = C.pic && C.pic.paper ? ` style="background:${esc(C.pic.paper)}"` : '';
-  return `
-    <div class="cl${numbered ? ' montage' : ''}"${paper}>
-      <div class="cl-pic">${art}</div>
+  const key = text === 'key' ? `
       <div class="cl-key">
         <div class="cl-k">${esc(d.label)} · ${esc(d.date)}</div>
         <div class="cl-t">Heard to-day</div>
         <ol class="fitrows">${rows}</ol>
         <div class="cl-f">${d.species_today} species · ${d.detections_today} calls to-day</div>${waiting}
-      </div>
+      </div>` : '';
+  return `
+    <div class="cl${numbered ? ' montage' : ''}${key ? '' : ' nokey'}"${paper}>
+      <div class="cl-pic">${art}</div>${key}
     </div>${foot(d)}`;
 }
 
@@ -567,7 +589,7 @@ export default function render(shadow, ctx) {
   installFonts(shadow, d.font_css);
   shadow.innerHTML = `
     <link rel="stylesheet" href="/static/style/spectra-widgets.css">
-    <div class="bb lay-${esc(layout)}${d.asleep ? ' lay-night' : ''} size-${esc(size)} lv-${esc(d.panel || 'colour')} font-${esc(d.font || 'classic')}">${body}</div>
+    <div class="bb lay-${esc(layout)}${d.asleep ? ' lay-night' : ''} size-${esc(size)} lv-${esc(d.panel || 'colour')} font-${esc(d.font || 'classic')}" style="--ts:${Number(d.text_scale) > 0 ? Number(d.text_scale) : 1}">${body}</div>
     <style>
       :host { display: block; height: 100%; }
       .bb {
@@ -907,26 +929,28 @@ export default function render(shadow, ctx) {
       .cl-mont figure { margin: 0; position: relative; min-height: 0; display: flex; background: #fffdf6; box-shadow: 0 0 0 1px #c9b98f; }
       .cl-tile { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
       .cl-tile.fit { padding: 1cqmin; }
-      .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: var(--bb-serif); font-size: 3.4cqmin; line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
+      .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: var(--bb-serif); font-size: calc(3.4cqmin * var(--ts, 1)); line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
       .cl-key { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-family: var(--bb-serif); }
+      .cl.nokey { padding: 2cqmin; }
+      .cl.nokey .cl-mont figcaption { left: 50%; top: auto; bottom: .6cqmin; transform: translateX(-50%); max-width: 92%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .cl-key ol.fitrows { flex: 0 1 auto; max-height: 100%; }
       /* the key's header lines never give up height to the list */
       .cl-k, .cl-t, .cl-f { flex: 0 0 auto; }
-      .cl-k { font-family: var(--bb-sc); font-size: 2.6cqmin; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .cl-t { font-family: var(--bb-sc); font-size: 6cqmin; letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
+      .cl-k { font-family: var(--bb-sc); font-size: calc(2.6cqmin * var(--ts, 1)); letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .cl-t { font-family: var(--bb-sc); font-size: calc(6cqmin * var(--ts, 1)); letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
       .cl ol { list-style: none; margin: 2cqmin 0 0; padding: 0; }
-      .cl li { display: flex; align-items: baseline; gap: 1.4cqmin; padding: .7cqmin 0; border-bottom: 1px solid #b7a67c; font-size: 3.4cqmin; }
+      .cl li { display: flex; align-items: baseline; gap: 1.4cqmin; padding: .7cqmin 0; border-bottom: 1px solid #b7a67c; font-size: calc(3.4cqmin * var(--ts, 1)); }
       .cl li em { font-style: normal; min-width: 3.4cqmin; }
       .cl li span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .cl li span i { margin-left: 1.2cqmin; font-size: 2.6cqmin; opacity: .75; }
+      .cl li span i { margin-left: 1.2cqmin; font-size: calc(2.6cqmin * var(--ts, 1)); opacity: .75; }
       .cl li b { font-weight: 400; }
-      .cl-f { margin-top: 1.6cqmin; font-style: italic; font-size: 2.6cqmin; opacity: .8; }
+      .cl-f { margin-top: 1.6cqmin; font-style: italic; font-size: calc(2.6cqmin * var(--ts, 1)); opacity: .8; }
       .lay-cluster .credit { font-family: var(--bb-serif); font-style: italic; }
       @container (max-aspect-ratio: 1) {
         .cl { flex-direction: column; gap: 2.6cqmin; }
         .cl-key { flex: 0 0 auto; justify-content: flex-start; }
-        .cl-t { font-size: 7cqmin; }
-        .cl li { font-size: 3.8cqmin; padding: .9cqmin 0; }
+        .cl-t { font-size: calc(7cqmin * var(--ts, 1)); }
+        .cl li { font-size: calc(3.8cqmin * var(--ts, 1)); padding: .9cqmin 0; }
         .cl-mont.n3 { grid-template-columns: repeat(2, 1fr); }
         .cl-mont.n3 figure:last-child { grid-column: 1 / -1; }
       }
@@ -1026,13 +1050,13 @@ export default function render(shadow, ctx) {
       @container (max-aspect-ratio: 1) {
         /* the plate keeps most of a tall cell; the key takes two columns */
         .cl-numbered .cl-key { max-height: 38%; flex: 0 0 auto; justify-content: flex-start; }
-        .cl-numbered li { font-size: 2.8cqmin; padding: .4cqmin 0; }
+        .cl-numbered li { font-size: calc(2.8cqmin * var(--ts, 1)); padding: .4cqmin 0; }
         .cl-numbered .cl-pic { overflow: hidden; }
         .cl-numbered .cl-t { padding-bottom: 1cqmin; }
         .cl-numbered ol.fitrows { margin-top: 1.2cqmin; }
         .cl-numbered .cl-key ol.fitrows { flex: 1 1 auto; min-height: 0; column-gap: 4cqmin; }
         .cl-numbered .cl-key ol.fitrows > li { width: calc(50% - 2cqmin); margin-right: 4cqmin; }
-        .cl-numbered .cl-t { font-size: 5cqmin; }
+        .cl-numbered .cl-t { font-size: calc(5cqmin * var(--ts, 1)); }
       }
       .sh-w { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 34%; text-align: center; font-family: var(--bb-serif); }
       .sh-wk { font-family: var(--bb-sc); font-size: calc(var(--lf) * 110cqh); letter-spacing: .16em; }

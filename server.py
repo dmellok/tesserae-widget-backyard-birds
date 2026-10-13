@@ -957,6 +957,11 @@ CLUSTER_MAX = 6
 # The cluster as a specimen sheet (each bird printed as painted) or blended
 # into one scene by a final AI pass.
 CLUSTER_STYLES = ("sheet", "numbered", "wreath", "notebook", "drawer", "blend")
+# How much text the cluster page carries: everything, the labels under each
+# bird alone, or none.
+CLUSTER_TEXTS = ("key", "under", "none")
+# Type size on the cluster page, per cent of the look's own.
+TEXT_SCALES = ("100", "60", "80", "125", "150")
 # Where the birds go on a printed cluster page; "auto" is the look's own.
 ARRANGEMENTS = ("auto", "oval", "circle", "ring", "rows", "scatter", "heap", "fal")
 # Where fal.ai puts the birds when it composes the scene (arrangement "fal").
@@ -1186,6 +1191,8 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     if job.get("collage"):
         meta["birds"] = job.get("birds") or []
         meta["tag"] = job.get("tag", "")
+        # where each bird sat on the collage, for labels over the blend
+        meta["boxes"] = job.get("boxes") or []
     _write(folder / f"{key}.json", json.dumps(meta).encode())
     _write(img, raw)
     _drop_derived(folder, key)
@@ -1775,6 +1782,7 @@ def _cluster(
                         "fidelity": fidelity,
                         "collage": made["sheet"],
                         "tag": made["tag"],
+                        "boxes": made["boxes"],
                         "aspect": aspect,
                         "birds": [
                             {"name": b["name"], "sci": b["sci"]} for b in painted
@@ -1791,9 +1799,11 @@ def _cluster(
                 {"name": b["name"], "sci": b["sci"], "count": counts.get(b["sci"], 0)}
                 for b in bmeta.get("birds") or []
             ]
+            boxes = bmeta.get("boxes") or []
             return {
                 "pic": blend,
                 "birds": shown,
+                "boxes": boxes if len(boxes) == len(shown) else [],
                 "montage": False,
                 "waiting": [],
                 "aspect": aspect,
@@ -1813,6 +1823,7 @@ def _cluster(
             return {
                 "pic": pic,
                 "birds": shown,
+                "boxes": made["boxes"],
                 "montage": False,
                 "waiting": waiting,
                 "aspect": aspect,
@@ -2911,6 +2922,9 @@ def _fetch(
         picked = ["name"]
     cluster_lines = tuple(v for v in LABEL_LINES if v in picked)
     cluster_arrange = _choice(options.get("cluster_arrange"), ARRANGEMENTS)
+    cluster_text = _choice(options.get("cluster_text"), CLUSTER_TEXTS)
+    text_scale = int(_choice(options.get("cluster_text_scale"), TEXT_SCALES)) / 100
+    footer = options.get("footer") != "hide"
     cluster_sizing = _choice(options.get("cluster_sizing"), SIZINGS)
     cluster_scene = _choice(options.get("cluster_scene"), tuple(SCENES))
     cluster_fidelity = _choice(options.get("cluster_fidelity"), tuple(FIDELITY))
@@ -3066,13 +3080,13 @@ def _fetch(
         if sono and not (layout == "bleed" and caption == "sonogram"):
             sono = {"song": sono["song"], "at": sono["at"]}  # the line alone
     elif layout == "cluster" and species:
+        # names at least about 13 px tall on the panel itself
+        label_size = max(SHEET_LABEL, 13 / ch) if ch else SHEET_LABEL
         if cluster_style != "blend" and pictures in ("plate_gen", "gen", "plate_photo"):
             ratio = cw / ch if cw and ch else 4 / 3
-            if cluster_style == "numbered":
+            if cluster_style == "numbered" and cluster_text == "key":
                 # the numbered plate shares the cell with its key
                 ratio = ratio * 0.64 / 0.92 if ratio >= 1 else ratio * 0.92 / 0.62
-            # names at least about 13 px tall on the panel itself
-            label_size = max(SHEET_LABEL, 13 / ch) if ch else SHEET_LABEL
             cluster, notices = _specimen_sheet(
                 species,
                 cluster_n,
@@ -3105,6 +3119,9 @@ def _fetch(
                 cluster_fidelity,
             )
             notices += [m for m in more if m not in notices]
+        if cluster is not None:
+            cluster.setdefault("label", label_size)
+            cluster.setdefault("lines", list(cluster_lines))
 
     hourly_total = [0] * 24
     for s in species:
@@ -3150,6 +3167,9 @@ def _fetch(
         "asleep": asleep,
         "names": name_locale,
         "cluster": cluster,
+        "cluster_text": cluster_text,
+        "text_scale": text_scale,
+        "footer": footer,
         "panel": levels,
         "chart_labels": chart_labels,
         "sort": sort,

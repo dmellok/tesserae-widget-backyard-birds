@@ -1011,3 +1011,56 @@ def test_built_pages_are_not_listed_as_paintings(tmp_path, offline):
             _settle()
     assert list((tmp_path / "gen").glob("sheet_*.json")), "a page was built"
     assert server._gallery(tmp_path)["birds"] == []
+
+
+def test_cluster_text_modes_and_footer_reach_the_client(tmp_path, offline):
+    with _at(8):
+        r = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "cluster",
+                "pictures": "plate_photo",
+                "cluster_size": 4,
+                "cluster_text": "under",
+                "cluster_text_scale": "150",
+                "cluster_labels": ["name", "count"],
+                "footer": "hide",
+            },
+            {},
+            ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480},
+        )
+    assert r["cluster_text"] == "under" and r["text_scale"] == 1.5
+    assert r["footer"] is False
+    assert r["cluster"]["lines"] == ["name", "count"]
+    assert r["cluster"]["label"] >= server.SHEET_LABEL
+    # anything else is the defaults: everything shown, the look's own size
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "layout": "cluster", "cluster_text": "huge"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert r["cluster_text"] == "key" and r["text_scale"] == 1 and r["footer"]
+
+
+def test_blend_remembers_where_each_bird_sat(tmp_path, offline):
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "cluster_style": "blend",
+        "pictures": "gen",
+        "cluster_size": 2,
+        "cluster_text": "under",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    with _at(8):
+        for _ in range(4):
+            r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+    c = r["cluster"]
+    assert c["pic"]["kind"] == "generated" and len(c["birds"]) == 2
+    # one box per bird, as fractions of the collage the blend was painted from
+    assert len(c["boxes"]) == 2
+    for x, y, w, h in c["boxes"]:
+        assert 0 <= x < 1 and 0 <= y < 1 and 0 < w <= 1 and 0 < h <= 1
+    assert c["lines"] == ["name"]
