@@ -471,7 +471,7 @@ def test_pack_entries_are_well_formed():
     ("layout", "caption"),
     [
         (lay, "band")
-        for lay in ("list", "latest", "gallery", "chart", "plate", "cluster")
+        for lay in ("list", "latest", "gallery", "chart", "plate", "cluster", "chorus")
     ]
     + [("chart", "mono-counts"), ("list", "gray4-peak")]
     + [("bleed", cap) for cap in server.CAPTIONS],
@@ -578,7 +578,7 @@ def test_cluster_paints_each_bird_then_blends_them(tmp_path, offline):
     assert len(c["birds"]) == 3 and "AI painting" in c["pic"]["credit"]
     g = server._gallery(tmp_path)
     assert sum(e["cluster"] for e in g["birds"]) == 1, "the blend is listed once"
-    assert not any(e["slug"].startswith("collage_") for e in g["birds"])
+    assert not any(e["slug"].startswith(("collage_", "sheet_")) for e in g["birds"])
 
 
 def test_cluster_reblends_only_after_the_interval(tmp_path, offline):
@@ -830,3 +830,184 @@ def test_font_choice_inlines_its_faces(tmp_path, offline):
     assert tw["font"] == "typewriter" and "Special Elite" in tw["font_css"]
     assert "Special Elite" not in theme["font_css"]
     assert lst["font_css"] == "", "theme layouts carry no bundled faces"
+
+
+def test_sun_and_moon_are_plausible():
+    from datetime import datetime as dt
+
+    melb = dt(2026, 10, 13, 12, 0, tzinfo=ZoneInfo("Australia/Melbourne"))
+    rise, set_ = server._sun_times(-37.8, 145.0, melb)
+    assert 5 * 60 < rise < 7 * 60 and 19 * 60 < set_ < 20 * 60 + 30, (rise, set_)
+    phase, name = server._moon(melb)
+    assert 0 <= phase < 1 and name
+    assert (
+        server._sun_times(80, 20, dt(2026, 6, 21, 12, tzinfo=ZoneInfo("UTC"))) is None
+    )
+
+
+def test_night_mode_shows_the_garden_asleep(tmp_path, offline):
+    opts = {**MELBOURNE, "pictures": "none", "night": "asleep"}
+    with _at(23, 30):
+        r = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
+    assert r["sky"]["dark"] and r["sky"]["sunrise"] and r["sky"]["moon_name"]
+    # the demo garden's owl calls through the night, so with 'asleep' the page
+    # sleeps only once nothing has called for 90 minutes; owls mode keeps the owl
+    with _at(23, 30):
+        owls = server.fetch(
+            {**opts, "night": "owls"}, {}, ctx={"data_dir": str(tmp_path)}
+        )
+    assert owls["sky"]["dark"]
+    sunset = server._minutes(owls["sky"]["sunset"])
+    assert owls["asleep"] or all(
+        (server._minutes(s["last"]) or 0) >= sunset for s in owls["species"]
+    ), "after dark, only birds heard since sunset"
+    with _at(12):
+        day = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
+    assert not day["sky"]["dark"] and day["asleep"] is None
+
+
+def test_hero_picks_the_rarest_or_busiest(tmp_path, offline):
+    with _at(8):
+        busy = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "plate",
+                "pictures": "none",
+                "hero": "busy",
+                "count": 12,
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        quiet = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "plate",
+                "pictures": "none",
+                "hero": "quiet",
+                "count": 12,
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert busy["latest"]["count"] == max(s["count"] for s in busy["species"])
+    assert quiet["latest"]["count"] == min(s["count"] for s in quiet["species"])
+    assert busy["hero_kick"] == "Most calls to-day" and quiet["hero_kick"]
+
+
+def test_returning_bird_after_a_long_absence(tmp_path, offline):
+    sci = "Trichoglossus moluccanus"
+    gen = tmp_path
+    (gen / "rarity.json").write_text(
+        json.dumps(
+            {"days": ["2026-07-01", "2026-07-02"], "seen": {sci: ["2026-07-01"]}}
+        )
+    )
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "pictures": "none", "count": 12},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    lorikeet = next(s for s in r["species"] if s["sci"] == sci)
+    assert lorikeet["returning"].startswith("back after 3 months"), lorikeet[
+        "returning"
+    ]
+    others = [s for s in r["species"] if s["sci"] != sci]
+    assert all(not s["returning"] for s in others)
+
+
+def test_demo_sonogram_gives_a_song_line(tmp_path, offline):
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "layout": "bleed", "caption": "sonogram", "pictures": "none"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        plate = server.fetch(
+            {**MELBOURNE, "layout": "plate", "pictures": "none"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        off = server.fetch(
+            {**MELBOURNE, "layout": "plate", "pictures": "none", "song_line": False},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert (
+        r["sono"]["src"].startswith("data:image/jpeg") and len(r["sono"]["song"]) >= 4
+    )
+    assert all(0 <= x <= 1 and 0 <= y <= 1 for x, y in r["sono"]["song"])
+    assert "src" not in plate["sono"] and plate["sono"]["song"], (
+        "the plate takes the line only"
+    )
+    assert off["sono"] is None
+
+
+def test_names_in_another_language_come_from_inaturalist(tmp_path, offline):
+    real = server._http.side_effect
+
+    def with_names(url, token="", accept="application/json", **kw):
+        if "inaturalist.org/v1/taxa?" in url and "locale=de" in url:
+            return json.dumps(
+                {"results": [{"id": 7, "preferred_common_name": "Amsel"}]}
+            ).encode(), None
+        return real(url, token, accept, **kw)
+
+    opts = {**BERLIN, "pictures": "none", "names": "de"}
+    with (
+        _at(8, tz="Europe/Berlin"),
+        patch.object(server, "_http", side_effect=with_names),
+    ):
+        first = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
+        _settle()
+        while server._NAMING:
+            time.sleep(0.02)
+        second = server.fetch(opts, {}, ctx={"data_dir": str(tmp_path)})
+    assert any(s["name"] == "Eurasian Blackbird" for s in first["species"]), (
+        "BirdNET's names until the lookup lands"
+    )
+    assert all(s["name"] == "Amsel" for s in second["species"]), (
+        "the fixture names every bird Amsel"
+    )
+    assert second["species"][0]["name_birdnet"]
+
+
+def test_plates_accepted_on_the_page_join_the_pack(tmp_path, offline):
+    extra = {
+        "Manorina melanocephala": {
+            "file": "x.jpg",
+            "box": [0, 0, 1, 1],
+            "source": "test plate",
+            "license": "Public domain",
+        }
+    }
+    (tmp_path / "plates_extra.json").write_text(json.dumps(extra))
+    with _at(8):
+        r = server.fetch(
+            {**MELBOURNE, "layout": "gallery", "pictures": "plate_photo"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    miner = next(s for s in r["species"] if s["sci"] == "Manorina melanocephala")
+    assert miner["pic"]["kind"] == "plate" and "test plate" in miner["pic"]["credit"]
+    assert "Manorina melanocephala" not in server._pack(), (
+        "the overlay is per fetch, not global"
+    )
+
+
+def test_built_pages_are_not_listed_as_paintings(tmp_path, offline):
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "pictures": "plate_photo",
+        "cluster_size": 3,
+    }
+    with _at(8):
+        for _ in range(3):
+            server.fetch(
+                opts, {}, ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+            )
+            _settle()
+    assert list((tmp_path / "gen").glob("sheet_*.json")), "a page was built"
+    assert server._gallery(tmp_path)["birds"] == []

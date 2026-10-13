@@ -59,7 +59,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, tzinfo
+from datetime import datetime, timedelta, timezone, tzinfo
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -99,7 +99,7 @@ NOTE_PAINTING = "Painting {name} with fal.ai; it appears on a later refresh."
 NOTE_GEN_FAILED = "AI painting of {name} failed: {why}"
 NOTE_GEN_CAP = "AI paintings: today's limit of {cap} is used up."
 
-LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed", "cluster")
+LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed", "cluster", "chorus")
 CAPTIONS = (
     "band",
     "editorial",
@@ -114,6 +114,7 @@ CAPTIONS = (
     "woodblock",
     "cameo",
     "nouveau",
+    "sonogram",
 )
 PICTURES = ("plate_photo", "plate_gen", "gen", "photo", "none")
 # A photo shown among plates is toned to a warm monotone by default.
@@ -132,6 +133,7 @@ SIZE = {
     "plate": 1100,
     "bleed": 1600,
     "cluster": 1600,
+    "chorus": 320,
 }
 
 # Fonts each caption style needs, inlined only when that style is on screen.
@@ -143,6 +145,8 @@ FONT_GROUPS = {
     "engraved": ("im_fell", "im_fell_sc"),
     "folio": ("im_fell", "im_fell_sc"),
     "cluster": ("im_fell", "im_fell_sc"),
+    "chorus": ("im_fell", "im_fell_sc"),
+    "sonogram": ("im_fell", "im_fell_sc"),
     "museum": ("im_fell", "im_fell_sc", "caveat"),
     "figure": ("im_fell", "im_fell_sc"),
     "cyanotype": ("im_fell", "im_fell_sc"),
@@ -183,7 +187,7 @@ def _is_progress(note: str) -> bool:
 
 def _rarity(
     data_dir: Path, species: list[dict[str, Any]], today: str
-) -> dict[str, tuple[str, float]]:
+) -> dict[str, tuple[str, float, str]]:
     """How usual each of today's birds is in this garden, from a log the
     widget keeps of the days each species was heard (gen-free, in
     rarity.json). Until a week has been logged it says so plainly; after
@@ -204,17 +208,33 @@ def _rarity(
         if today not in hits:
             hits.append(today)
             changed = True
-    days = sorted(days)[-60:]
+    days = sorted(days)[-400:]
     window = days[-30:]
     if changed:
-        seen = {k: sorted(v)[-60:] for k, v in seen.items()}
+        seen = {k: sorted(v)[-400:] for k, v in seen.items()}
         _write(path, json.dumps({"days": days, "seen": seen}).encode())
-    out: dict[str, tuple[str, float]] = {}
+    out: dict[str, tuple[str, float, str]] = {}
     for s in species:
         key = s.get("sci") or s["name"]
         hits = [d for d in seen.get(key, []) if d in window]
         n, span = len(hits), len(window)
         share = n / span if span else 1.0
+        # a seasonal arrival: heard again after a long absence
+        before = [d for d in seen.get(key, []) if d < today]
+        back = ""
+        if before:
+            with contextlib.suppress(ValueError):
+                away = (
+                    datetime.strptime(today, "%Y-%m-%d")
+                    - datetime.strptime(before[-1], "%Y-%m-%d")
+                ).days
+                if away >= RETURN_AFTER_DAYS:
+                    months = round(away / 30)
+                    back = (
+                        f"back after {months} month{'' if months == 1 else 's'}"
+                        if months >= 2
+                        else f"back after {away} days"
+                    )
         if span < 7:
             text = f"heard {n} of {span} day{'' if span == 1 else 's'} logged"
         elif n == 1 and len(seen.get(key, [])) == 1:
@@ -227,7 +247,7 @@ def _rarity(
             text = "regular"
         else:
             text = "daily visitor"
-        out[key] = (text, round(share, 3))
+        out[key] = (text, round(share, 3), back)
     return out
 
 
@@ -388,8 +408,14 @@ def _from_birdnet(
         recent.append(
             {
                 "name": str(d["commonName"]),
+                "sci": str(d.get("scientificName") or ""),
                 "time": _hhmm(d.get("time") or d.get("timestamp")),
                 "conf": round(float(d.get("confidence") or 0), 2),
+                # a detection with a clip (or a kept spectrogram) has a sonogram
+                "id": int(d["id"])
+                if str(d.get("id") or "").isdigit()
+                and (d.get("clipName") or d.get("spectrogramOnly"))
+                else None,
             }
         )
     return {"species": species, "recent": recent}, None
@@ -540,13 +566,26 @@ def _demo(options: dict[str, Any], now: datetime) -> dict[str, Any]:
 # ----------------------------------------------------------------------
 
 
+# Plates accepted on the paintings page, merged over the bundled pack. Set
+# per fetch (and per admin request) as a context variable, like the cap.
+_EXTRA_PLATES: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
+    "birds_extra_plates", default={}
+)
+
+
+def _extra_plates(data_dir: Path) -> dict[str, Any]:
+    found = _read_json(data_dir / "plates_extra.json", {})
+    return found if isinstance(found, dict) else {}
+
+
 def _pack() -> dict[str, Any]:
+    plates: dict[str, Any] = {}
     with contextlib.suppress(OSError, json.JSONDecodeError):
         data = json.loads((HERE / "plates.json").read_text(encoding="utf-8"))
-        plates = data.get("plates")
-        if isinstance(plates, dict):
-            return plates
-    return {}
+        if isinstance(data.get("plates"), dict):
+            plates = dict(data["plates"])
+    plates.update(_EXTRA_PLATES.get())
+    return plates
 
 
 def _cached_get(data_dir: Path, url: str, token: str = "") -> bytes | None:
@@ -933,6 +972,32 @@ SCENES = {
     "wetland": "among reeds and still water at the edge of a wetland",
     "garden": "in a cottage garden, on a fence, shrubs and a path",
 }
+# Which bird the single-bird layouts show.
+HEROES = ("latest", "rare", "busy", "quiet", "new")
+# What the panel does after dark.
+NIGHTS = ("off", "asleep", "owls")
+# Languages iNaturalist can give common names in ("birdnet" keeps BirdNET-Go's).
+NAME_LOCALES = (
+    "birdnet",
+    "en",
+    "de",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "pt",
+    "sv",
+    "da",
+    "nb",
+    "fi",
+    "pl",
+    "cs",
+    "ru",
+    "ja",
+    "zh-CN",
+)
+# A bird away this many days or more counts as returning when it is heard again.
+RETURN_AFTER_DAYS = 45
 FIDELITY = {
     "exact": "Keep every bird's species, plumage, markings, pose and size as painted, and keep each about where it is.",
     "free": "Keep every bird's species, plumage and markings, but re-pose and move the birds freely to make the scene natural.",
@@ -2403,6 +2468,380 @@ def _sheet(
 
 
 # ----------------------------------------------------------------------
+# The sky: sunrise, sunset and the moon, for night mode
+# ----------------------------------------------------------------------
+
+
+def _sun_times(lat: float, lon: float, now: datetime) -> tuple[int, int] | None:
+    """(sunrise, sunset) as minutes of the local day, by the usual NOAA
+    approximation; None where the sun does not rise or set that day."""
+    import math
+
+    n = now.timetuple().tm_yday
+    offset = (now.utcoffset() or timedelta(0)).total_seconds() / 3600
+    out = []
+    for rising in (True, False):
+        t = n + (((6 if rising else 18) - lon / 15) / 24)
+        m = 0.9856 * t - 3.289
+        lng = (
+            m
+            + 1.916 * math.sin(math.radians(m))
+            + 0.020 * math.sin(math.radians(2 * m))
+            + 282.634
+        ) % 360
+        ra = math.degrees(math.atan(0.91764 * math.tan(math.radians(lng)))) % 360
+        ra += (math.floor(lng / 90) - math.floor(ra / 90)) * 90
+        ra /= 15
+        sin_dec = 0.39782 * math.sin(math.radians(lng))
+        cos_dec = math.cos(math.asin(sin_dec))
+        cos_h = (
+            math.cos(math.radians(90.833)) - sin_dec * math.sin(math.radians(lat))
+        ) / (cos_dec * math.cos(math.radians(lat)))
+        if cos_h > 1 or cos_h < -1:
+            return None
+        h = (
+            360 - math.degrees(math.acos(cos_h))
+            if rising
+            else math.degrees(math.acos(cos_h))
+        ) / 15
+        ut = (h + ra - 0.06571 * t - 6.622 - lon / 15) % 24
+        out.append(int(round(((ut + offset) % 24) * 60)))
+    return out[0], out[1]
+
+
+def _moon(now: datetime) -> tuple[float, str]:
+    """(phase 0..1 from new moon, its name)."""
+    epoch = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
+    phase = (((now - epoch).total_seconds() / 86400) / 29.530588853) % 1
+    names = (
+        "new moon",
+        "waxing crescent",
+        "first quarter",
+        "waxing gibbous",
+        "full moon",
+        "waning gibbous",
+        "last quarter",
+        "waning crescent",
+    )
+    return round(phase, 3), names[int((phase * 8 + 0.5) % 8)]
+
+
+def _night(options: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Sunrise, sunset, the moon and whether it is dark now, for the cell's
+    (or the app's) location; a garden without one is never dark."""
+    try:
+        lat, lon = float(options.get("latitude")), float(options.get("longitude"))
+    except (TypeError, ValueError):
+        return {"dark": False}
+    times = _sun_times(lat, lon, now)
+    phase, moon = _moon(now)
+    if times is None:
+        return {"dark": False, "moon": phase, "moon_name": moon}
+    rise, set_ = times
+    mins = now.hour * 60 + now.minute
+    dark = mins < rise or mins > set_
+    return {
+        "dark": dark,
+        "sunrise": f"{rise // 60:02d}:{rise % 60:02d}",
+        "sunset": f"{set_ // 60:02d}:{set_ % 60:02d}",
+        "moon": phase,
+        "moon_name": moon,
+    }
+
+
+# ----------------------------------------------------------------------
+# Sonogram and song line
+# ----------------------------------------------------------------------
+
+
+def _song_line(png: bytes) -> list[list[float]]:
+    """The call's shape: the brightest frequency in each slice of the
+    sonogram, as up to 64 points of (time, pitch) in 0..1, pitch upward.
+    Quiet slices (background only) are left out, so a call with two notes
+    gives two strokes."""
+    try:
+        import numpy as np
+        from PIL import Image
+    except ImportError:  # pragma: no cover
+        return []
+    try:
+        im = Image.open(io.BytesIO(png)).convert("L")
+    except Exception:  # noqa: BLE001
+        return []
+    w, h = im.size
+    mx, my = int(w * 0.06), int(h * 0.06)  # axes and margins, if any
+    a = np.asarray(im.crop((mx, my, w - mx, h - my)), dtype=np.float32)
+    if a.size == 0:
+        return []
+    a -= np.percentile(a, 60)  # the background
+    a = np.clip(a, 0, None)
+    peak = float(a.max()) or 1.0
+    cols = a.shape[1]
+    step = max(1, cols // 64)
+    pts: list[list[float]] = []
+    for x0 in range(0, cols - step + 1, step):
+        col = a[:, x0 : x0 + step].mean(axis=1)
+        if col.max() < 0.35 * peak:
+            continue
+        y = int(col.argmax())
+        pts.append([round(x0 / cols, 3), round(1 - y / a.shape[0], 3)])
+    return pts
+
+
+def _sonogram_fetch(base: str, token: str, det_id: int, data_dir: Path) -> bytes | None:
+    """BirdNET-Go's spectrogram for a detection, kept once fetched; a miss
+    (still being made, or gone) is retried after five minutes."""
+    folder = data_dir / "sono"
+    folder.mkdir(parents=True, exist_ok=True)
+    path, miss = folder / f"{det_id}.png", folder / f"{det_id}.miss"
+    if path.exists():
+        with contextlib.suppress(OSError):
+            return path.read_bytes()
+    if miss.exists() and time.time() - miss.stat().st_mtime < 300:
+        return None
+    body, err = _http(f"{base}/api/v2/spectrogram/{det_id}", token, accept="image/*")
+    if err or not body:
+        with contextlib.suppress(OSError):
+            miss.touch()
+        return None
+    _write(path, body)
+    with contextlib.suppress(OSError):
+        for old in folder.glob("*.png"):
+            if time.time() - old.stat().st_mtime > 7 * 86400:
+                old.unlink()
+    return body
+
+
+def _demo_sonogram(name: str) -> bytes:
+    """A made-up sonogram for the demo garden: a few chirps on a dark
+    ground, the same for a bird every time."""
+    import numpy as np
+    from PIL import Image
+
+    rng = random.Random(name)
+    w, h = 600, 220
+    yy, xx = np.mgrid[0:h, 0:w]
+    img = (
+        rng.random() * 0
+        + 18
+        + 22 * (1 - yy / h)
+        + np.asarray([[rng.random() * 14 for _ in range(w)] for _ in range(h)])
+    )
+    for _ in range(rng.randint(3, 6)):
+        x0 = rng.uniform(0.05, 0.8) * w
+        span = rng.uniform(0.06, 0.2) * w
+        y0 = rng.uniform(0.25, 0.75) * h
+        bend = rng.uniform(-0.5, 0.5) * h
+        for t in np.linspace(0, 1, int(span)):
+            x = int(x0 + t * span)
+            y = int(y0 + bend * (t - 0.5) ** 2 * 4 - bend * 0.2 * t)
+            if 0 <= x < w and 3 <= y < h - 3:
+                img[y - 3 : y + 4, x] = np.maximum(
+                    img[y - 3 : y + 4, x], [120, 200, 250, 255, 250, 200, 120]
+                )
+    arr = np.clip(img, 0, 255).astype(np.uint8)
+    out = io.BytesIO()
+    Image.fromarray(arr).save(out, "PNG")
+    return out.getvalue()
+
+
+def _sonogram(
+    latest: dict[str, Any],
+    recent: list[dict[str, Any]],
+    base: str,
+    token: str,
+    data_dir: Path,
+    levels: str,
+    demo: bool,
+) -> dict[str, Any] | None:
+    """The hero bird's latest call: {src, song, at}. From BirdNET-Go's
+    spectrogram of its most recent detection with a clip, or a made-up one
+    in the demo garden."""
+    if demo:
+        png = _demo_sonogram(latest["name"])
+        at = latest.get("last", "")
+    else:
+        hit = next(
+            (r for r in recent if r.get("id") and r.get("name") == latest["name"]), None
+        )
+        if not hit:
+            return None
+        got = _sonogram_fetch(base, token, int(hit["id"]), data_dir)
+        if not got:
+            return None
+        png, at = got, hit.get("time", "")
+    key = hashlib.sha1(png[:4096] + str(len(png)).encode()).hexdigest()[:16]
+    src = _render(png, 900, None, data_dir / "sono" / f"s_{key}.jpg", levels)
+    if not src:
+        return None
+    return {"src": src, "song": _song_line(png), "at": at}
+
+
+# ----------------------------------------------------------------------
+# Names in another language or region
+# ----------------------------------------------------------------------
+
+_NAMING: set[str] = set()
+
+
+def _names_file(data_dir: Path, locale: str, place: str) -> Path:
+    folder = data_dir / "names"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{_slug(locale)}_{_slug(place or 'any')}.json"
+
+
+def _names(
+    data_dir: Path, species: list[dict[str, Any]], locale: str, place: str
+) -> None:
+    """Give each species its common name in ``locale`` (and, for English,
+    the region ``place``) from iNaturalist, looked up once per species and
+    kept. Missing names are fetched in a background thread, so a fresh
+    garden shows BirdNET-Go's names until the next refresh."""
+    if locale == "birdnet":
+        return
+    path = _names_file(data_dir, locale, place)
+    have = _read_json(path, {})
+    have = have if isinstance(have, dict) else {}
+    missing = [s["sci"] for s in species if s.get("sci") and s["sci"] not in have]
+    for s in species:
+        got = have.get(s.get("sci") or "")
+        if got:
+            s["name_birdnet"] = s["name"]
+            s["name"] = got
+    if not missing:
+        return
+    job = str(path)
+    with _PAINTING_LOCK:
+        if job in _NAMING:
+            return
+        _NAMING.add(job)
+
+    def run() -> None:
+        try:
+            found = _read_json(path, {})
+            found = found if isinstance(found, dict) else {}
+            for sci in missing[:40]:
+                q = {"q": sci, "rank": "species", "per_page": 1, "locale": locale}
+                if place:
+                    q["preferred_place_id"] = place
+                data, err = _json(f"{INAT_TAXA}?{urllib.parse.urlencode(q)}")
+                rows = (
+                    data.get("results") if isinstance(data, dict) and not err else None
+                )
+                name = (
+                    str((rows[0] or {}).get("preferred_common_name") or "")
+                    if rows
+                    else ""
+                )
+                # "" is kept too, so a bird iNaturalist has no name for is asked once
+                found[sci] = name
+                time.sleep(0.4)
+            _write(path, json.dumps(found, ensure_ascii=False).encode())
+        finally:
+            with _PAINTING_LOCK:
+                _NAMING.discard(job)
+
+    ctx = contextvars.copy_context()
+    threading.Thread(
+        target=ctx.run, args=(run,), name="birds-names", daemon=True
+    ).start()
+
+
+# ----------------------------------------------------------------------
+# Growing the plate pack from the paintings page
+# ----------------------------------------------------------------------
+
+_FINDING: set[str] = set()
+
+
+def _plate_tool() -> Any:
+    """tools/build_plates.py, loaded by path, its cache moved under data."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "bb_build_plates", HERE / "tools" / "build_plates.py"
+    )
+    if spec is None or spec.loader is None:
+        return None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _find_plates(sci: str, data_dir: Path) -> None:
+    """Look for public-domain plates of a species on Wikimedia Commons, in
+    the background, and keep the best few with their crops for the
+    paintings page to offer."""
+    with _PAINTING_LOCK:
+        if sci in _FINDING:
+            return
+        _FINDING.add(sci)
+
+    def run() -> None:
+        store = data_dir / "plates_found.json"
+        try:
+            tool = _plate_tool()
+            if tool is None:
+                return
+            tool.OUT = data_dir / "plates_tool"
+            tool.CACHE = tool.OUT / "cache"
+            tool.CACHE.mkdir(parents=True, exist_ok=True)
+            cands = tool.candidates(sci)[:4]
+            for c in cands:
+                try:
+                    c["box"] = list(tool.autocrop(tool._image(c["thumb"])))
+                except Exception:  # noqa: BLE001
+                    c["box"] = [0, 0, 1, 1]
+            found = _read_json(store, {})
+            found = found if isinstance(found, dict) else {}
+            found[sci] = {"at": int(time.time()), "candidates": cands}
+            _write(store, json.dumps(found, ensure_ascii=False).encode())
+        except Exception as err:  # noqa: BLE001
+            found = _read_json(store, {})
+            found = found if isinstance(found, dict) else {}
+            found[sci] = {
+                "at": int(time.time()),
+                "candidates": [],
+                "error": str(err)[:200],
+            }
+            _write(store, json.dumps(found, ensure_ascii=False).encode())
+        finally:
+            with _PAINTING_LOCK:
+                _FINDING.discard(sci)
+
+    ctx = contextvars.copy_context()
+    threading.Thread(
+        target=ctx.run, args=(run,), name=f"birds-plates-{_slug(sci)}", daemon=True
+    ).start()
+
+
+def _plateless(data_dir: Path) -> list[dict[str, Any]]:
+    """Birds this widget has reported that have no plate, with any plates
+    found for them so far."""
+    pack = _pack()
+    found = _read_json(data_dir / "plates_found.json", {})
+    found = found if isinstance(found, dict) else {}
+    with _PAINTING_LOCK:
+        finding = set(_FINDING)
+    out = []
+    for name, sci in _known_birds(data_dir):
+        if not sci or sci in pack:
+            continue
+        got = found.get(sci) if isinstance(found.get(sci), dict) else None
+        out.append(
+            {
+                "name": name,
+                "sci": sci,
+                "finding": sci in finding,
+                "candidates": (got or {}).get("candidates") or [],
+                "searched": got is not None,
+                "error": (got or {}).get("error"),
+            }
+        )
+    return out
+
+
+# ----------------------------------------------------------------------
 # Fonts
 # ----------------------------------------------------------------------
 
@@ -2441,13 +2880,28 @@ def _font_css(groups: tuple[str, ...]) -> str:
 def fetch(
     options: dict[str, Any], settings: dict[str, Any], *, ctx: dict[str, Any]
 ) -> dict[str, Any]:
+    """The widget's data. The daily limit and the plates accepted on the
+    paintings page ride on context variables for the call (and the painting
+    threads it starts, which copy the context), and are reset after."""
+    data_dir = Path(ctx.get("data_dir") or ".")
+    cap_token = _CAP.set(_daily_cap(settings))
+    plates_token = _EXTRA_PLATES.set(_extra_plates(data_dir))
+    try:
+        return _fetch(options, settings, ctx=ctx)
+    finally:
+        _EXTRA_PLATES.reset(plates_token)
+        _CAP.reset(cap_token)
+
+
+def _fetch(
+    options: dict[str, Any], settings: dict[str, Any], *, ctx: dict[str, Any]
+) -> dict[str, Any]:
     base = _base_url(str(options.get("url") or ""))
     token = str(options.get("token") or "").strip()
     layout = _choice(options.get("layout"), LAYOUTS)
     caption = _choice(options.get("caption"), CAPTIONS)
     pictures = _choice(options.get("pictures"), PICTURES)
     photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
-    _CAP.set(_daily_cap(settings))
     art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
     cluster_style = _choice(options.get("cluster_style"), CLUSTER_STYLES)
     picked = options.get("cluster_labels")
@@ -2467,6 +2921,13 @@ def fetch(
     elif cluster_arrange == "fal":
         cluster_style = "blend"
     font = _choice(options.get("font"), tuple(FONTS))
+    hero = _choice(options.get("hero"), HEROES)
+    night_mode = _choice(options.get("night"), NIGHTS)
+    name_locale = _choice(options.get("names"), NAME_LOCALES)
+    name_place = str(options.get("names_place") or "").strip()
+    if not name_place.isdigit():
+        name_place = ""
+    song_line = options.get("song_line", True) is not False
     cluster_n = _int(
         options.get("cluster_size"),
         4 if cluster_style == "blend" else 12,
@@ -2513,17 +2974,54 @@ def fetch(
     species = [dict(s) for s in raw.get("species", [])]
     rarity = _rarity(data_dir, species, now.strftime("%Y-%m-%d")) if species else {}
     for s_ in species:
-        s_["rarity"], s_["rarity_share"] = rarity.get(
-            s_.get("sci") or s_["name"], ("", 0.0)
+        s_["rarity"], s_["rarity_share"], s_["returning"] = rarity.get(
+            s_.get("sci") or s_["name"], ("", 0.0, "")
         )
+    _names(data_dir, species, name_locale, name_place)
+    sky = _night(options, now)
+    asleep = None
+    if night_mode != "off" and sky.get("dark") and species:
+        last_min = max(_minutes(s["last"]) or 0 for s in species)
+        quiet_for = now.hour * 60 + now.minute - last_min
+        if night_mode == "owls":
+            # after dark, only the birds heard since sunset
+            sunset = _minutes(sky.get("sunset") or "") or 0
+            night_birds = [s for s in species if (_minutes(s["last"]) or 0) >= sunset]
+            if night_birds:
+                species = night_birds
+            else:
+                asleep = {"quiet_min": quiet_for}
+        elif quiet_for >= 90:
+            asleep = {"quiet_min": quiet_for}
     if sort == "count":
         species.sort(key=lambda s: (-s["count"], -(_minutes(s["last"]) or 0)))
     else:
         species.sort(key=lambda s: (-(_minutes(s["last"]) or 0), -s["count"]))
-    shown = species[:want]
+    # the chorus is the whole day's arrivals, not the first few
+    shown = species[: (SHEET_MAX if layout == "chorus" else want)]
     latest = (
         dict(max(species, key=lambda s: _minutes(s["last"]) or 0)) if species else None
     )
+    hero_kick = ""
+    if species and hero != "latest":
+        pick = {
+            "rare": min(
+                species, key=lambda s: (s.get("rarity_share") or 0, -s["count"])
+            ),
+            "busy": max(species, key=lambda s: s["count"]),
+            "quiet": min(species, key=lambda s: s["count"]),
+            "new": next(
+                (s for s in species if s.get("new") or s.get("returning")), None
+            ),
+        }.get(hero)
+        if pick is not None:
+            latest = dict(pick)
+            hero_kick = {
+                "rare": "Rarest to-day",
+                "busy": "Most calls to-day",
+                "quiet": "Fewest calls to-day",
+                "new": "New to-day" if pick.get("new") else "Returned to-day",
+            }[hero]
     if latest:
         # which bird of the day this was, by first heard: the folio's plate number
         firsts = sorted(_minutes(s.get("first") or "") or 0 for s in species)
@@ -2545,7 +3043,7 @@ def fetch(
             levels,
             art_style,
         )
-    elif layout in ("list", "gallery"):
+    elif layout in ("list", "gallery", "chorus"):
         notices = _attach_pictures(
             shown,
             pictures,
@@ -2557,6 +3055,16 @@ def fetch(
             levels,
             art_style,
         )
+    sono = None
+    if latest and (
+        (layout == "bleed" and caption == "sonogram")
+        or (song_line and layout in ("bleed", "plate", "latest"))
+    ):
+        sono = _sonogram(
+            latest, raw.get("recent", []), base, token, data_dir, levels, not base
+        )
+        if sono and not (layout == "bleed" and caption == "sonogram"):
+            sono = {"song": sono["song"], "at": sono["at"]}  # the line alone
     elif layout == "cluster" and species:
         if cluster_style != "blend" and pictures in ("plate_gen", "gen", "plate_photo"):
             ratio = cw / ch if cw and ch else 4 / 3
@@ -2609,11 +3117,11 @@ def fetch(
     groups: tuple[str, ...] = ()
     if layout == "bleed":
         groups = FONT_GROUPS.get(caption, ())
-    elif layout in ("plate", "cluster"):
+    elif layout in ("plate", "cluster", "chorus"):
         groups = FONT_GROUPS["engraved"]
         if layout == "cluster" and cluster_style == "notebook":
             groups = (*groups, "caveat")
-    if layout in ("bleed", "plate", "cluster"):
+    if layout in ("bleed", "plate", "cluster", "chorus"):
         groups = tuple(dict.fromkeys((*groups, *FONTS[font])))
     credits = []
     pictured = [*shown, *([latest] if latest else [])]
@@ -2634,6 +3142,13 @@ def fetch(
         "photo_tone": photo_tone,
         "art_style": art_style,
         "font": font,
+        "hero": hero,
+        "hero_kick": hero_kick,
+        "sono": sono,
+        "song_line": song_line,
+        "sky": sky,
+        "asleep": asleep,
+        "names": name_locale,
         "cluster": cluster,
         "panel": levels,
         "chart_labels": chart_labels,
@@ -2733,7 +3248,7 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
     with contextlib.suppress(OSError):
         for f in folder.glob("*.jpg"):
             if (
-                f.stem.startswith("collage_")
+                f.stem.startswith(("collage_", "sheet_"))
                 or not _SLUG_RE.fullmatch(f.stem)
                 or not (folder / f"{f.stem}.json").exists()
             ):
@@ -2764,7 +3279,9 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
                 }
             )
         for f in folder.glob("*.err"):
-            if _SLUG_RE.fullmatch(f.stem) and not f.stem.startswith("collage_"):
+            if _SLUG_RE.fullmatch(f.stem) and not f.stem.startswith(
+                ("collage_", "sheet_")
+            ):
                 err = _read_json(f, {})
                 e = entry(f.stem)
                 take(e, err)
@@ -2851,6 +3368,7 @@ def blueprint() -> Any:
     @bp.before_request
     def daily_cap() -> None:
         _CAP.set(_daily_cap(settings()))
+        _EXTRA_PLATES.set(_extra_plates(data_dir()))
 
     def slug_or_404(slug: str) -> str:
         if not _SLUG_RE.fullmatch(slug):
@@ -2888,6 +3406,8 @@ def blueprint() -> Any:
             g=_gallery(dd),
             known=_known_birds(dd),
             has_key=bool(fal_key()),
+            plateless=_plateless(dd),
+            extra_plates=_extra_plates(dd),
         )
 
     @bp.get("/painting/<path:name>")
@@ -2985,6 +3505,66 @@ def blueprint() -> Any:
     @bp.post("/bulk-delete")
     def bulk_delete() -> Any:
         retired(retire(request.form.getlist("keys")))
+        return back()
+
+    @bp.post("/plates/find")
+    def plates_find() -> Any:
+        sci = request.form.get("sci", "").strip()
+        if not re.fullmatch(r"[A-Z][a-z]+ [a-z-]+( [a-z-]+)?", sci):
+            abort(400)
+        _find_plates(sci, data_dir())
+        flash(
+            f"Looking for plates of {sci} on Wikimedia Commons. It takes a minute; reload to see them.",
+            "success",
+        )
+        return back()
+
+    @bp.post("/plates/accept")
+    def plates_accept() -> Any:
+        sci = request.form.get("sci", "").strip()
+        try:
+            idx = int(request.form.get("idx", "0"))
+        except ValueError:
+            abort(400)
+        dd = data_dir()
+        found = _read_json(dd / "plates_found.json", {})
+        cands = (
+            ((found.get(sci) or {}).get("candidates") or [])
+            if isinstance(found, dict)
+            else []
+        )
+        if not (0 <= idx < len(cands)):
+            abort(404)
+        c = cands[idx]
+        x0, y0, x1, y1 = c["box"]
+        extra = _extra_plates(dd)
+        extra[sci] = {
+            "file": c["file"],
+            "box": c["box"],
+            "focus": [round((x0 + x1) / 2, 3), round(y0 + (y1 - y0) * 0.42, 3)],
+            "source": c.get("source") or "illustration",
+            "artist": c.get("artist") or "",
+            "license": c.get("license") or "Public domain",
+        }
+        _write(dd / "plates_extra.json", json.dumps(extra, ensure_ascii=False).encode())
+        # the sheet's cut of this bird is made again from the new plate
+        with contextlib.suppress(OSError):
+            (_gen_dir(dd) / f"{_slug(sci)}--plate.jpg").unlink()
+        flash(f"{sci} now has a plate. It shows on the next refresh.", "success")
+        return back()
+
+    @bp.post("/plates/remove")
+    def plates_remove() -> Any:
+        sci = request.form.get("sci", "").strip()
+        dd = data_dir()
+        extra = _extra_plates(dd)
+        if sci in extra:
+            del extra[sci]
+            _write(
+                dd / "plates_extra.json", json.dumps(extra, ensure_ascii=False).encode()
+            )
+            with contextlib.suppress(OSError):
+                (_gen_dir(dd) / f"{_slug(sci)}--plate.jpg").unlink()
         return back()
 
     @bp.post("/style-delete")

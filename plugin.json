@@ -1,9 +1,9 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "kind": "widget",
-  "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
+  "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 29 styles. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
   "icon": "ph-bird",
   "supports": {
     "sizes": [
@@ -108,6 +108,10 @@
         {
           "value": "cluster",
           "label": "Cluster: today's busiest birds together in one picture"
+        },
+        {
+          "value": "chorus",
+          "label": "Dawn chorus: today's birds along a timeline, at the time each was first heard"
         }
       ]
     },
@@ -172,8 +176,62 @@
         {
           "value": "nouveau",
           "label": "Art Nouveau"
+        },
+        {
+          "value": "sonogram",
+          "label": "Sonogram: the bird's latest call as a scientific strip"
         }
       ]
+    },
+    {
+      "name": "hero",
+      "type": "select",
+      "label": "Which bird (single-bird layouts)",
+      "default": "latest",
+      "help": "The bird the latest visitor, book plate and full bleed layouts show. Rarest uses the widget's own log of the days each bird was heard here; newest takes a bird BirdNET-Go flags as new, or one back after a long absence, and otherwise the latest.",
+      "choices": [
+        {
+          "value": "latest",
+          "label": "The bird just heard"
+        },
+        {
+          "value": "rare",
+          "label": "The rarest heard to-day"
+        },
+        {
+          "value": "busy",
+          "label": "The one with most calls"
+        },
+        {
+          "value": "quiet",
+          "label": "The one with fewest calls"
+        },
+        {
+          "value": "new",
+          "label": "A new or returning species"
+        }
+      ],
+      "show_if": {
+        "layout": [
+          "latest",
+          "plate",
+          "bleed"
+        ]
+      }
+    },
+    {
+      "name": "song_line",
+      "type": "boolean",
+      "label": "Draw the bird's song line",
+      "default": true,
+      "help": "A small line under the bird's name tracing its latest call, from BirdNET-Go's sonogram of the detection (a made-up one in the demo garden).",
+      "show_if": {
+        "layout": [
+          "latest",
+          "plate",
+          "bleed"
+        ]
+      }
     },
     {
       "name": "pictures",
@@ -713,8 +771,185 @@
         "layout": [
           "plate",
           "bleed",
-          "cluster"
+          "cluster",
+          "chorus"
         ]
+      }
+    },
+    {
+      "name": "night",
+      "type": "select",
+      "label": "After dark",
+      "default": "off",
+      "help": "Uses sunrise and sunset for the cell's (or the app's) location. Asleep shows the moon and the last bird heard once nothing has called for 90 minutes after dark. Owls only keeps the birds heard since sunset on the page after dark, and shows the asleep page when there are none.",
+      "choices": [
+        {
+          "value": "off",
+          "label": "Nothing special"
+        },
+        {
+          "value": "asleep",
+          "label": "Show the garden asleep when it goes quiet"
+        },
+        {
+          "value": "owls",
+          "label": "Only the night's birds after dark"
+        }
+      ]
+    },
+    {
+      "name": "names",
+      "type": "select",
+      "label": "Bird names",
+      "default": "birdnet",
+      "help": "Common names come from BirdNET-Go in whatever language it is set to. Pick a language to take them from iNaturalist instead; they are looked up once per bird and kept. With English, the region below picks local names (Australian Magpie rather than a general one).",
+      "choices": [
+        {
+          "value": "birdnet",
+          "label": "As BirdNET-Go sends them"
+        },
+        {
+          "value": "en",
+          "label": "English"
+        },
+        {
+          "value": "de",
+          "label": "Deutsch"
+        },
+        {
+          "value": "fr",
+          "label": "Français"
+        },
+        {
+          "value": "es",
+          "label": "Español"
+        },
+        {
+          "value": "it",
+          "label": "Italiano"
+        },
+        {
+          "value": "nl",
+          "label": "Nederlands"
+        },
+        {
+          "value": "pt",
+          "label": "Português"
+        },
+        {
+          "value": "sv",
+          "label": "Svenska"
+        },
+        {
+          "value": "da",
+          "label": "Dansk"
+        },
+        {
+          "value": "nb",
+          "label": "Norsk"
+        },
+        {
+          "value": "fi",
+          "label": "Suomi"
+        },
+        {
+          "value": "pl",
+          "label": "Polski"
+        },
+        {
+          "value": "cs",
+          "label": "Čeština"
+        },
+        {
+          "value": "ru",
+          "label": "Русский"
+        },
+        {
+          "value": "ja",
+          "label": "日本語"
+        },
+        {
+          "value": "zh-CN",
+          "label": "中文"
+        }
+      ]
+    },
+    {
+      "name": "names_place",
+      "type": "select",
+      "label": "Bird names: region",
+      "default": "",
+      "help": "Prefers the names used in this country, where iNaturalist has them.",
+      "choices": [
+        {
+          "value": "",
+          "label": "Anywhere"
+        },
+        {
+          "value": "6744",
+          "label": "Australia"
+        },
+        {
+          "value": "6803",
+          "label": "New Zealand"
+        },
+        {
+          "value": "6857",
+          "label": "United Kingdom"
+        },
+        {
+          "value": "6718",
+          "label": "Ireland"
+        },
+        {
+          "value": "1",
+          "label": "United States"
+        },
+        {
+          "value": "6712",
+          "label": "Canada"
+        },
+        {
+          "value": "6986",
+          "label": "South Africa"
+        },
+        {
+          "value": "6681",
+          "label": "India"
+        },
+        {
+          "value": "7207",
+          "label": "Germany"
+        },
+        {
+          "value": "6753",
+          "label": "France"
+        },
+        {
+          "value": "6774",
+          "label": "Spain"
+        },
+        {
+          "value": "6973",
+          "label": "Italy"
+        },
+        {
+          "value": "7506",
+          "label": "Netherlands"
+        },
+        {
+          "value": "6737",
+          "label": "Japan"
+        },
+        {
+          "value": "6878",
+          "label": "Brazil"
+        }
+      ],
+      "show_if": {
+        "names": {
+          "not": "birdnet"
+        }
       }
     },
     {

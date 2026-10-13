@@ -75,7 +75,107 @@ function twoLines(name, maxCqmin, widthCqw, em) {
   return `min(${maxCqmin}cqmin, ${(widthCqw / (best * em)).toFixed(2)}cqw)`;
 }
 
-const tag = (s) => (s.new ? '<span class="new">new</span>' : '');
+const tag = (s) => (s.new ? '<span class="new">new</span>' : s.returning ? `<span class="new back" title="${esc(s.returning)}">back</span>` : '');
+
+/* The bird's call as a line: the sonogram's brightest pitch over time, in
+   one or more strokes. Drawn under the bird's name on the single-bird
+   layouts when the cell asks for it. */
+function song(d, cls) {
+  const pts = d.sono && d.sono.song;
+  if (!d.song_line || !pts || pts.length < 2) return '';
+  const strokes = [];
+  let cur = [];
+  pts.forEach(([x, y], i) => {
+    if (i && x - pts[i - 1][0] > 0.06) { if (cur.length > 1) strokes.push(cur); cur = []; }
+    cur.push([x, y]);
+  });
+  if (cur.length > 1) strokes.push(cur);
+  if (!strokes.length) return '';
+  const lines = strokes.map((st) => `<polyline points="${st.map(([x, y]) => `${(x * 100).toFixed(1)},${(2 + (1 - y) * 20).toFixed(1)}`).join(' ')}"/>`).join('');
+  return `<svg class="song ${cls || ''}" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">${lines}</svg>`;
+}
+
+/* The chorus: today's birds along the dawn, each at the time it was first
+   heard. Birds that arrived long before the main run (an owl at midnight)
+   are listed in a note rather than stretching the strip. Cards take lanes
+   above and below the line (left and right in a tall cell) so neighbours
+   clear. */
+function chorus(d, showSci, tone, portrait) {
+  const mins = (t) => { const [h, m] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
+  const all = d.species.filter((s) => mins(s.first) != null).sort((a, b) => mins(a.first) - mins(b.first));
+  if (!all.length) return `${head(d)}<div class="msg"><div class="msg-b">Nothing heard yet today.</div></div>`;
+  /* the main run: the longest stretch with no gap over 90 minutes */
+  let runs = [[all[0]]];
+  for (let i = 1; i < all.length; i++) {
+    if (mins(all[i].first) - mins(all[i - 1].first) <= 90) runs[runs.length - 1].push(all[i]);
+    else runs.push([all[i]]);
+  }
+  const birds = runs.reduce((best, r) => (r.length > best.length ? r : best), runs[0]);
+  const earlier = all.filter((b) => mins(b.first) < mins(birds[0].first));
+  const later = all.filter((b) => mins(b.first) > mins(birds[birds.length - 1].first));
+  const nowM = d.now_hour * 60 + (mins(d.now) % 60 || 0);
+  const from = Math.floor(mins(birds[0].first) / 30) * 30;
+  let to = Math.ceil((mins(birds[birds.length - 1].first) + 1) / 30) * 30;
+  if (to - from < 60) to = from + 60;
+  const span = to - from;
+  const step = span <= 120 ? 15 : span <= 300 ? 30 : 60;
+  const pos = (m) => ((m - from) / span) * 100;
+  const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  /* lanes: a card takes the first lane whose last card is a card's width back */
+  const gap = portrait ? 12 : 15;
+  const laneEnd = [];
+  const half = portrait ? 5 : 8;
+  const laned = birds.map((b) => {
+    /* a card at the very start or end is held inside the strip */
+    const x = Math.min(Math.max(pos(mins(b.first)), half), 100 - half);
+    let lane = laneEnd.findIndex((end) => x - end >= gap);
+    if (lane < 0) lane = Math.min(laneEnd.length, 5);
+    laneEnd[lane] = Math.max(laneEnd[lane] || -99, x);
+    return { b, x, lane };
+  });
+  const ticks = [];
+  for (let h = from; h <= to; h += step) ticks.push(`<div class="ch-tick${h % 60 === 0 ? ' maj' : ''}" style="--p:${pos(h).toFixed(2)}%"><em>${h % 60 === 0 || step < 60 ? hhmm(h) : ''}</em></div>`);
+  const nowMark = nowM >= from && nowM <= to ? `<div class="ch-now" style="--p:${pos(nowM).toFixed(2)}%"></div>` : '';
+  const dense = laned.some(({ lane }) => lane >= 2);
+  const items = laned.map(({ b, x, lane }) => `
+      <div class="ch-b l${lane}" style="--p:${x.toFixed(2)}%">
+        ${pic(b.pic, 'ch-pic', tone)}
+        <div class="ch-x"><div class="ch-t">${esc(b.first)}</div>
+        <div class="ch-n">${esc(b.name)}${tag(b)}</div>
+        ${showSci && b.sci ? `<div class="ch-s">${esc(b.sci)}</div>` : ''}</div>
+      </div>`).join('');
+  const aside = [...earlier.map((b) => `${esc(b.name)} ${esc(b.first)}`), ...later.map((b) => `${esc(b.name)} ${esc(b.first)}`)];
+  return `
+    <div class="ch">
+      <div class="ch-head"><span class="ch-k">${esc(d.label)} · ${esc(d.date)}</span><span class="ch-title">Dawn chorus</span>
+        <span class="ch-sub">${birds.length} birds first heard ${esc(hhmm(mins(birds[0].first)))} to ${esc(hhmm(mins(birds[birds.length - 1].first)))}${aside.length ? ` · ${earlier.length ? 'earlier' : 'later'}: ${aside.join(', ')}` : ''}</span></div>
+      <div class="ch-strip${dense ? ' dense' : ''}"><div class="ch-line"></div>${ticks.join('')}${nowMark}${items}</div>
+    </div>${foot(d)}`;
+}
+
+/* After dark, when nothing has called for a while: the moon and the last
+   bird heard, instead of a stale day page. */
+function night(d) {
+  const sky = d.sky || {};
+  const L = d.latest || {};
+  const ph = sky.moon || 0;
+  /* the lit part of the moon: a disc, a dark disc over it, and an ellipse
+     whose width follows the phase */
+  const k = Math.cos(ph * 2 * Math.PI);
+  const right = ph < 0.5;
+  const moon = `<svg class="nt-moon" viewBox="-52 -52 104 104" aria-hidden="true">
+      <circle r="48" class="lit"/>
+      <path class="dark" d="M0,-48 A48,48 0 0,${right ? 0 : 1} 0,48 A${(48 * Math.abs(k)).toFixed(1)},48 0 0,${(right ? k > 0 : k < 0) ? 0 : 1} 0,-48 Z"/>
+    </svg>`;
+  const since = d.asleep && d.asleep.quiet_min >= 60 ? `${Math.floor(d.asleep.quiet_min / 60)} h ${d.asleep.quiet_min % 60} min` : `${(d.asleep || {}).quiet_min || 0} min`;
+  return `
+    <div class="nt">
+      ${moon}
+      <div class="nt-t">The garden is asleep</div>
+      <div class="nt-s">Nothing heard for ${since}${L.name ? `. Last was the ${esc(L.name)} at ${esc(L.last)}` : ''}.</div>
+      <div class="nt-f">${esc(sky.moon_name || '')}${sky.sunrise ? ` · sunrise ${esc(sky.sunrise)}` : ''} · ${d.species_today} species to-day</div>
+    </div>`;
+}
 
 const ROMAN = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
 function roman(n) {
@@ -163,9 +263,10 @@ function latest(d, showSci, tone) {
     <div class="lat">
       <div class="lpic">${pic(L.pic, 'lp', tone)}
         <div class="lcap">
-          <div class="kick">Just heard · ${esc(L.last)}</div>
+          <div class="kick">${esc(d.hero_kick || 'Just heard')} · ${esc(L.last)}</div>
           <div class="lname">${esc(L.name)}${tag(L)}</div>
           <div class="lmeta">${showSci && L.sci ? `<i>${esc(L.sci)}</i>` : ''}<span>${Math.round(L.conf * 100)}% sure</span><span>${L.count} calls today</span></div>
+          ${song(d, 'l-song')}
         </div>
       </div>
       <div class="lside">
@@ -220,9 +321,10 @@ function plate(d, showSci, tone) {
     <div class="page">
       <div class="pframe">${pic(L.pic, 'pp', tone)}</div>
       <div class="ptext">
-        <div class="pkick">Last heard ${esc(L.last)}${L.first ? ` · first at ${esc(L.first)}` : ''}</div>
+        <div class="pkick">${d.hero_kick ? `${esc(d.hero_kick)} · ` : ''}Last heard ${esc(L.last)}${L.first ? ` · first at ${esc(L.first)}` : ''}</div>
         <div class="pname">${esc(L.name)}.</div>
         ${showSci && L.sci ? `<div class="psci">${esc(L.sci)}.</div>` : ''}
+        ${song(d, 'p-song')}
         <div class="prule"></div>
         <div class="pline">${nth ? `Heard the ${esc(nth)} time to-day` : ''}, ${Math.round(L.conf * 100)} per cent. certain.</div>
         <div class="pkick sp">In the garden to-day · ${d.species_today} species</div>
@@ -239,9 +341,10 @@ function bleed(d, showSci, tone, caption) {
   let cap;
   if (caption === 'editorial') {
     cap = `<div class="ed-fade"></div><div class="ed">
-      <div class="ed-k">Heard ${esc(when)}</div>
+      <div class="ed-k">${d.hero_kick ? esc(d.hero_kick) : `Heard ${esc(when)}`}</div>
       <div class="ed-n" style="${fit(L.name, 24, 46, 0.5)}">${esc(L.name)}</div>
       ${sci ? `<div class="ed-s">${sci}</div>` : ''}
+      ${song(d, 'ed-song')}
       <div class="ed-st"><span><b>${L.count}</b> calls today</span><span><b>${d.species_today}</b> species</span></div></div>`;
   } else if (caption === 'notebook') {
     cap = `<div class="nb">
@@ -258,6 +361,7 @@ function bleed(d, showSci, tone, caption) {
       <div class="fo-cap">
         <div class="fo-n" style="${fit(`${L.name}.`, 7.4, 84, 0.68, true)}">${esc(L.name)}.</div>
         ${sci ? `<div class="fo-s">${sci}.</div>` : ''}
+        ${song(d, 'fo-song')}
         <div class="fo-l">${nth ? `Heard the ${esc(nth)} time to-day` : 'Heard to-day'}, last at ${esc(L.last)}.</div></div>`;
   } else if (caption === 'museum') {
     cap = `<div class="mu">
@@ -307,6 +411,12 @@ function bleed(d, showSci, tone, caption) {
     cap = `<div class="nv-arch"></div>
       <div class="nv-band"><div class="nv-n" style="${fit(L.name, 6.6, 66, 0.52, true)}">${esc(L.name)}</div>
         <div class="nv-s">${sci ? `${sci} · ` : ''}${L.count} calls to-day</div></div>`;
+  } else if (caption === 'sonogram') {
+    const sn = d.sono;
+    cap = `<div class="sn">
+      <div class="sn-h"><span class="sn-n" style="${fit(L.name, 5.6, 56, 0.68, true)}">${esc(L.name)}</span>${sci ? `<span class="sn-s">${sci}</span>` : ''}</div>
+      <div class="sn-img">${sn && sn.src ? `<img src="${sn.src}" alt="">` : `<div class="sn-none">No recording of this call yet</div>`}</div>
+      <div class="sn-c"><span>${sn && sn.at ? `Call recorded ${esc(sn.at)}` : 'Sonogram'} · ${L.count} calls to-day</span><span>time &rarr; · pitch &uarr;</span></div></div>`;
   } else if (caption === 'tag') {
     cap = `<div class="tg"><svg class="tg-bg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,12 8,0 100,0 100,100 8,100 0,88"/></svg>
       <div class="tg-k">${esc(d.label).toUpperCase()} · NO. ${String(d.detections_today).padStart(4, '0')}</div>
@@ -320,7 +430,7 @@ function bleed(d, showSci, tone, caption) {
       <div class="po-st"><div><b>${L.count}</b><span>calls today</span></div><div><b>${esc(L.last)}</b><span>last heard</span></div></div></div>`;
   } else {
     cap = `<div class="bd">
-      <div class="bd-t"><div class="kick">Just heard · ${esc(when)}</div><div class="bd-n" style="${fit(L.name, 7.4, 62, 0.56, true)};--two:${twoLines(L.name, 7.4, 56, 0.56)}">${esc(L.name)}${tag(L)}</div></div>
+      <div class="bd-t"><div class="kick">${esc(d.hero_kick || 'Just heard')} · ${esc(when)}</div><div class="bd-n" style="${fit(L.name, 7.4, 62, 0.56, true)};--two:${twoLines(L.name, 7.4, 56, 0.56)}">${esc(L.name)}${tag(L)}</div></div>
       <div class="bd-c a"><b>${L.count}</b><span>calls today</span></div>
       <div class="bd-c k"><b>${d.species_today}</b><span>species</span></div></div>`;
   }
@@ -444,7 +554,9 @@ export default function render(shadow, ctx) {
   } else if (d.empty || !d.latest) {
     body = `${head(d)}<div class="msg"><div class="msg-b">Nothing heard yet today.</div>
             <div class="msg-h">BirdNET-Go lists a bird once it is heard above the confidence you set.</div></div>`;
-  } else if (layout === 'latest') body = latest(d, showSci, tone);
+  } else if (d.asleep) body = night(d);
+  else if (layout === 'chorus') body = chorus(d, showSci, tone, !!(shadow.host && shadow.host.clientHeight > shadow.host.clientWidth));
+  else if (layout === 'latest') body = latest(d, showSci, tone);
   else if (layout === 'gallery') body = gallery(d, showSci, tone);
   else if (layout === 'chart') body = chart(d);
   else if (layout === 'plate') body = plate(d, showSci, tone);
@@ -455,7 +567,7 @@ export default function render(shadow, ctx) {
   installFonts(shadow, d.font_css);
   shadow.innerHTML = `
     <link rel="stylesheet" href="/static/style/spectra-widgets.css">
-    <div class="bb lay-${esc(layout)} size-${esc(size)} lv-${esc(d.panel || 'colour')} font-${esc(d.font || 'classic')}">${body}</div>
+    <div class="bb lay-${esc(layout)}${d.asleep ? ' lay-night' : ''} size-${esc(size)} lv-${esc(d.panel || 'colour')} font-${esc(d.font || 'classic')}">${body}</div>
     <style>
       :host { display: block; height: 100%; }
       .bb {
@@ -937,6 +1049,100 @@ export default function render(shadow, ctx) {
       .lv-gray16 .sh-notebook, .lv-gray4 .sh-notebook, .lv-mono .sh-notebook { color: #000; }
       .lv-gray16 .sh-s, .lv-gray4 .sh-s, .lv-mono .sh-s { color: #000; }
       .lv-mono .sh-l, .lv-mono .sh-c { -webkit-text-stroke: .35px currentColor; }
+
+      /* returning birds wear the same badge as new ones */
+      .new.back { background: var(--ink); }
+      .lv-gray16 .new, .lv-gray4 .new, .lv-mono .new { background: #000; }
+
+      /* the song line */
+      .song { display: block; width: 100%; height: 5cqmin; overflow: visible; }
+      .song polyline { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+      .p-song { width: 60%; margin: 1cqmin 0 0; }
+      .ed-song { width: 70%; margin-top: 2cqmin; }
+      .fo-song { width: 36%; margin: .6cqmin 0 0; }
+      .l-song { width: 50%; height: 4cqmin; margin-top: .8cqmin; opacity: .75; }
+      .lv-mono .song polyline { stroke-width: 2; }
+
+      /* sonogram: the bird above, its latest call below as a scientific strip */
+      .cap-sonogram { color: #2a2116; }
+      .cap-sonogram .bp { bottom: 40%; }
+      .sn { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; padding: 1.6cqmin 4cqmin 2.4cqmin; display: flex; flex-direction: column; font-family: var(--bb-serif); border-top: 1px solid currentColor; }
+      .sn-h { display: flex; align-items: baseline; gap: 2.4cqmin; flex: 0 0 auto; }
+      .sn-n { font-family: var(--bb-sc); letter-spacing: .06em; white-space: nowrap; }
+      .sn-s { font-style: italic; font-size: 3cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sn-img { flex: 1 1 0; min-height: 0; margin: 1.2cqmin 0; border: 1px solid currentColor; background: #141c24; position: relative; }
+      .sn-img img { width: 100%; height: 100%; object-fit: fill; display: block; }
+      .sn-none { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #cbd3dc; font-style: italic; font-size: 3cqmin; }
+      .sn-c { display: flex; justify-content: space-between; font-size: 2.4cqmin; font-style: italic; opacity: .85; flex: 0 0 auto; }
+      @container (max-aspect-ratio: 1) { .cap-sonogram .bp { bottom: 36%; } .sn { height: 36%; } }
+      .lv-gray16 .cap-sonogram, .lv-gray4 .cap-sonogram, .lv-mono .cap-sonogram { color: #000; }
+      .lv-mono .sn-img { background: #000; }
+
+      /* chorus: a timeline of first calls */
+      .lay-chorus { background: #f3ead6; color: #2a2116; }
+      .ch { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 2.6cqmin 3cqmin 1cqmin; font-family: var(--bb-serif); }
+      .ch-head { display: flex; align-items: baseline; gap: 2cqmin; flex: 0 0 auto; flex-wrap: wrap; }
+      .ch-k { font-family: var(--bb-sc); font-size: 2.6cqmin; letter-spacing: .14em; }
+      .ch-title { font-family: var(--bb-sc); font-size: 5cqmin; letter-spacing: .04em; line-height: 1; margin-left: auto; }
+      .ch-sub { font-style: italic; font-size: 2.6cqmin; width: 100%; }
+      .ch-strip { flex: 1 1 0; min-height: 0; position: relative; margin-top: 2cqmin; }
+      .ch-line { position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
+      .ch-tick { position: absolute; left: var(--p); top: 50%; width: 1px; height: 1.6cqmin; background: currentColor; transform: translateY(-50%); }
+      .ch-tick.maj { height: 3cqmin; }
+      .ch-tick em { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: .4cqmin; font-style: normal; font-size: 2.2cqmin; font-family: var(--bb-sc); }
+      .ch-now { position: absolute; left: var(--p); top: 50%; width: 0; height: 0; transform: translate(-50%, -50%); border: 1.4cqmin solid transparent; border-left-color: #9b2c1c; border-right: 0; }
+      .ch-b { position: absolute; left: var(--p); width: 15%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; text-align: center; }
+      .ch-x { display: flex; flex-direction: column; align-items: center; max-width: 100%; }
+      .ch-b.l0, .ch-b.l2, .ch-b.l4 { bottom: calc(50% + 3cqmin); }
+      .ch-b.l1, .ch-b.l3, .ch-b.l5 { top: calc(50% + 3cqmin); flex-direction: column-reverse; }
+      .ch-b.l1 .ch-x, .ch-b.l3 .ch-x, .ch-b.l5 .ch-x { flex-direction: column-reverse; }
+      .ch-b.l2 { bottom: calc(50% + 22cqmin); } .ch-b.l3 { top: calc(50% + 22cqmin); }
+      .ch-b.l4 { bottom: calc(50% + 41cqmin); } .ch-b.l5 { top: calc(50% + 41cqmin); }
+      /* a crowded chorus: smaller cards, lanes closer together */
+      .dense .ch-pic { width: 8cqmin; height: 8cqmin; }
+      .dense .ch-t { font-size: 1.9cqmin; } .dense .ch-n { font-size: 2.2cqmin; } .dense .ch-s { display: none; }
+      .dense .ch-b.l2 { bottom: calc(50% + 17cqmin); } .dense .ch-b.l3 { top: calc(50% + 17cqmin); }
+      .dense .ch-b.l4 { bottom: calc(50% + 31cqmin); } .dense .ch-b.l5 { top: calc(50% + 31cqmin); }
+      .ch-b::after { content: ''; position: absolute; left: 50%; width: 1px; height: 3cqmin; background: currentColor; opacity: .5; }
+      .ch-b.l0::after, .ch-b.l2::after, .ch-b.l4::after { top: 100%; } .ch-b.l1::after, .ch-b.l3::after, .ch-b.l5::after { bottom: 100%; }
+      .ch-pic { width: 11cqmin; height: 11cqmin; overflow: hidden; background: #fffdf6; box-shadow: 0 0 0 1px #c9b98f; flex: 0 0 auto; }
+      .ch-pic.fit { padding: .5cqmin; }
+      .ch-pic.nopic { padding: 2.6cqmin; }
+      .ch-t { font-family: var(--bb-sc); font-size: 2.2cqmin; letter-spacing: .1em; margin: .3cqmin 0 0; }
+      .ch-n { font-size: 2.5cqmin; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .ch-n .new { font-size: 1.6cqmin; margin-left: .8cqmin; padding: .2cqmin .6cqmin; }
+      .ch-s { font-style: italic; font-size: 2cqmin; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      @container (max-aspect-ratio: 1) {
+        .ch-line { left: 50%; right: auto; top: 0; bottom: 0; width: 1px; height: auto; box-shadow: 2px 0 0 #f3ead6, 3px 0 0 currentColor; }
+        .ch-tick { left: 50%; top: var(--p); width: 1.6cqmin; height: 1px; transform: translateX(-50%); }
+        .ch-tick.maj { width: 3cqmin; height: 1px; }
+        .ch-tick em { top: 50%; left: 100%; transform: translateY(-50%); margin: 0 0 0 .6cqmin; }
+        .ch-now { left: 50%; top: var(--p); border: 1.4cqmin solid transparent; border-top-color: #9b2c1c; border-bottom: 0; }
+        .ch-b { left: auto; top: var(--p); bottom: auto; width: 44%; transform: translateY(-50%); flex-direction: row; text-align: left; align-items: center; gap: 1.4cqmin; }
+        .ch-b .ch-x { align-items: flex-start; flex-direction: column; }
+        .ch-b.l0, .ch-b.l2, .ch-b.l4 { right: calc(50% + 3cqmin); flex-direction: row-reverse; text-align: right; bottom: auto; }
+        .ch-b.l0 .ch-x, .ch-b.l2 .ch-x, .ch-b.l4 .ch-x { align-items: flex-end; }
+        .ch-b.l1, .ch-b.l3, .ch-b.l5 { left: calc(50% + 3cqmin); top: var(--p); flex-direction: row; }
+        .ch-b.l2, .ch-b.l4 { right: calc(50% + 3cqmin); } .ch-b.l3, .ch-b.l5 { left: calc(50% + 3cqmin); }
+        .ch-b.l2, .ch-b.l3 { transform: translateY(-50%) translateY(6cqmin); } .ch-b.l4, .ch-b.l5 { transform: translateY(-50%) translateY(12cqmin); }
+        .ch-b::after { display: none; }
+      }
+      .lv-gray16 .lay-chorus, .lv-gray4 .lay-chorus, .lv-mono .lay-chorus { background: #fff; color: #000; }
+      .lv-gray16 .ch-line, .lv-gray4 .ch-line, .lv-mono .ch-line { box-shadow: 0 2px 0 #fff, 0 3px 0 #000; }
+      .lv-gray16 .ch-now, .lv-gray4 .ch-now, .lv-mono .ch-now { border-left-color: #000; }
+      .lv-mono .ch-pic { box-shadow: 0 0 0 1px #000; }
+
+      /* night */
+      .lay-night { background: #10192a; color: #e8e1cf; }
+      .nt { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 6cqmin; font-family: var(--bb-serif); gap: 1.6cqmin; }
+      .nt-moon { width: 26cqmin; height: 26cqmin; margin-bottom: 2cqmin; }
+      .nt-moon .lit { fill: #e8e1cf; } .nt-moon .dark { fill: #10192a; }
+      .nt-t { font-family: var(--bb-sc); font-size: 7cqmin; letter-spacing: .08em; line-height: 1.05; }
+      .nt-s { font-style: italic; font-size: 3.4cqmin; max-width: 70%; }
+      .nt-f { font-family: var(--bb-sc); font-size: 2.6cqmin; letter-spacing: .14em; opacity: .8; margin-top: 2cqmin; }
+      .lv-gray16 .lay-night, .lv-gray4 .lay-night, .lv-mono .lay-night { background: #000; color: #fff; }
+      .lv-gray16 .nt-moon .lit, .lv-gray4 .nt-moon .lit, .lv-mono .nt-moon .lit { fill: #fff; }
+      .lv-gray16 .nt-moon .dark, .lv-gray4 .nt-moon .dark, .lv-mono .nt-moon .dark { fill: #000; }
 
       /* chart labels */
       .cells i { position: relative; }

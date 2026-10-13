@@ -155,6 +155,58 @@
   {% endif %}
 </section>
 
+<section class="card">
+  {{ card_head('Plates', icon_name='book-open', level=2,
+               blurb='Classic plates come from a reviewed pack. Birds this widget has heard that have no plate are listed here; the widget can look for public-domain plates of them on Wikimedia Commons, and you pick the one that shows the right bird. Plates you accept are kept with this install, not in the pack, and win over AI paintings and photos.') }}
+  {% if extra_plates %}
+  <p class="bb-meta">Plates you have accepted:
+    {% for sci, e in extra_plates.items() %}
+    <form method="post" action="{{ url_for('backyard_birds_admin.plates_remove') }}" class="bb-inline" onsubmit="return confirm('Drop the accepted plate for {{ sci }}?');">
+      <input type="hidden" name="sci" value="{{ sci }}"><i>{{ sci }}</i> ({{ e.source }}) <button type="submit" class="ghost bb-link">remove</button>
+    </form>{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+  {% if plateless %}
+  <div class="bb-plates">
+    {% for b in plateless %}
+    <div class="bb-plate-row">
+      <div class="bb-plate-bird"><b>{{ b.name }}</b> <i>{{ b.sci }}</i>
+        {% if b.finding %}<span class="bb-tag">searching…</span>
+        {% elif b.error %}<span class="bb-err">search failed: {{ b.error }}</span>
+        {% elif b.searched and not b.candidates %}<span class="bb-meta">no public-domain plate found</span>{% endif %}
+        <form method="post" action="{{ url_for('backyard_birds_admin.plates_find') }}" class="bb-inline">
+          <input type="hidden" name="sci" value="{{ b.sci }}">
+          <button type="submit" class="ghost" {% if b.finding %}disabled{% endif %}>{{ 'Search again' if b.searched else 'Find plates' }}</button>
+        </form>
+      </div>
+      {% if b.candidates %}
+      <div class="bb-cands">
+        {% for c in b.candidates %}
+        {% set bw = c.box[2] - c.box[0] %}{% set bh = c.box[3] - c.box[1] %}
+        <figure class="bb-cand">
+          <a href="{{ c.thumb }}" data-lightbox aria-label="{{ c.file }}">
+            <div class="bb-cand-im" style="background-image:url('{{ c.thumb }}');background-size:{{ (100 / (bw if bw > 0.01 else 1))|round(1) }}% {{ (100 / (bh if bh > 0.01 else 1))|round(1) }}%;background-position:{{ (c.box[0] / (1 - bw) * 100 if bw < 0.999 else 0)|round(1) }}% {{ (c.box[1] / (1 - bh) * 100 if bh < 0.999 else 0)|round(1) }}%"></div>
+          </a>
+          <figcaption>
+            <span>{{ c.source }}{% if c.artist %} · {{ c.artist[:40] }}{% endif %}</span>
+            <form method="post" action="{{ url_for('backyard_birds_admin.plates_accept') }}" class="bb-inline">
+              <input type="hidden" name="sci" value="{{ b.sci }}"><input type="hidden" name="idx" value="{{ loop.index0 }}">
+              <button type="submit" class="ghost">Use this</button>
+            </form>
+          </figcaption>
+        </figure>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="bb-meta">Every bird heard so far has a plate.</p>
+  {% endif %}
+</section>
+
 <script>
   (function () {
     const chips = document.querySelectorAll('.bb-chip');
@@ -191,6 +243,15 @@
 </script>
 
 <style>
+  .bb-plates { display: flex; flex-direction: column; gap: 12px; }
+  .bb-plate-row { border-top: 1px solid var(--t-border); padding-top: 10px; }
+  .bb-plate-bird { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 13px; }
+  .bb-plate-bird i { color: var(--t-fg-soft); }
+  .bb-err { font-size: 12px; color: var(--t-danger, #c8281e); }
+  .bb-cands { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .bb-cand { margin: 0; width: 160px; }
+  .bb-cand-im { width: 160px; height: 160px; background-repeat: no-repeat; background-color: #fff; border: 1px solid var(--t-border); }
+  .bb-cand figcaption { font-size: 11px; color: var(--t-fg-soft); margin-top: 4px; display: flex; flex-direction: column; gap: 4px; }
   .bb-inline { display: inline; margin: 0; }
   .bb-link { padding: 0 4px; font-size: inherit; text-decoration: underline; }
   .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }

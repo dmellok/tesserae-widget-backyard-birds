@@ -29,11 +29,18 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 | Day chart | Who called in which hour, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
 | Cluster | Today's busiest birds on one page: a specimen sheet of their AI paintings, a blended AI scene, or a numbered montage of their plates and photos |
-| Full bleed | The latest bird's picture fills the cell, with one of thirteen caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype, postage stamp, woodblock print, cameo, Art Nouveau |
+| Full bleed | The chosen bird's picture fills the cell, with one of fourteen caption styles: name band, editorial, field notebook, specimen tag, poster, folio plate, museum label, scientific figure, cyanotype, postage stamp, woodblock print, cameo, Art Nouveau, sonogram |
+| Dawn chorus | Today's birds along a timeline at the time each was first heard, zoomed to the chorus itself; birds heard long before or after are noted |
 
 The last four full-bleed styles are natural-history pieces. **Folio plate** is a double-ruled page from a Victorian folio, numbered by which bird of the day this was, with an engraved caption. **Museum label** sets the plate beside a collection card in printed field names and handwritten entries. **Scientific figure** draws the bird's calls per hour round a 24-hour dial with a figure caption. **Cyanotype** prints the picture as its own negative, white on Prussian blue, under the Latin name.
 
 Four more frame the bird as an object. **Postage stamp** puts it on a perforated stamp, with the garden as its country and the day's calls as its value. **Woodblock print** gives it a tall title cartouche and a red seal, as on a Japanese kacho-e print. **Cameo** shows it in an oval window on a dark mat, like a Victorian cabinet card. **Art Nouveau** sets it under an arched frame with a title panel.
+
+**Which bird** picks the bird the latest visitor, book plate and full bleed show: the one just heard, the rarest heard today (from the widget's own log of the days each bird was heard here), the one with most or fewest calls, or a new or returning species. **Draw the bird's song line** traces the bird's latest call under its name, from BirdNET-Go's sonogram of the detection; the **sonogram** caption shows the whole sonogram as a scientific strip. A bird heard again after six weeks or more away is marked *back* where new birds are marked *new*.
+
+**After dark** uses sunrise and sunset for the location: *asleep* shows the moon's phase and the last bird heard once nothing has called for 90 minutes after dark, and *owls* keeps only the birds heard since sunset on the page.
+
+**Bird names** can come from iNaturalist in another language, looked up once per bird and kept, with a region so that English names are the local ones.
 
 Every layout adapts to portrait cells. At full bleed, a plate is never cropped: it is fitted whole into the space the caption leaves, and the rest of the cell is filled with the plate's own paper colour.
 
@@ -98,6 +105,10 @@ The widget has its own page under **Widgets → Backyard Birds** (`/plugins/back
 A kept painting is also used for a bird without a plate whenever classic plates are on, so turning the AI option off does not throw the paintings away.
 
 Credits for whatever is on screen are printed in the corner or footer.
+
+### Growing the pack from the paintings page
+
+The paintings page lists the birds this widget has heard that have no plate. **Find plates** looks for public-domain illustrations of the species on Wikimedia Commons in the background and shows the best few, cropped to the bird; **Use this** keeps one with the install (in `plates_extra.json`, never in the bundled pack), and it is used from the next refresh. Plates you accept win over AI paintings and photos; pull requests that add reviewed plates to the bundled pack are still welcome.
 
 ### The plate pack
 
