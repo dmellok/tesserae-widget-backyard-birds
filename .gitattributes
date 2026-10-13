@@ -1,7 +1,8 @@
 # Kept out of the release tarball GitHub builds from a tag: the catalog serves
-# screenshots from its own repo, and tools/ is for growing the plate pack.
+# screenshots from its own repo. tools/build_plates.py stays in: the paintings
+# page imports it to look for plates.
 # Tesserae refuses widget tarballs over 4 MiB.
 screenshots/ export-ignore
-tools/ export-ignore
+tools/out/ export-ignore
 .gitattributes export-ignore
 .gitignore export-ignore
