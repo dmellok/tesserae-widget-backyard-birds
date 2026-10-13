@@ -747,11 +747,13 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
         "simple shapes, a little texture from the block, plain off-white paper",
     ),
     "grumpy": (
-        "Grumpy cartoon",
-        "a chunky, round cartoon of the bird as a cross little game character: thick "
-        "frowning eyebrows, a determined glare, bold flat colours and a heavy dark outline, "
-        "still recognisably the species from its colours, markings and bill, on plain "
-        "white paper",
+        "Grumpy (plate style)",
+        "a plate from a nineteenth-century natural history book: a realistic, hand-coloured "
+        "lithograph in the manner of John Gould, soft watercolour washes over fine engraved "
+        "linework on warm cream paper. The one change: the bird looks thoroughly cross, the "
+        "feathers over its eye drawn down into a heavy frown and a hard, indignant glare, "
+        "drawn with the same care as the rest of the plate. Everything else, plumage, "
+        "proportions and pose, stays true to life",
     ),
     "sketch": (
         "Field sketch",
