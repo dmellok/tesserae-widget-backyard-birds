@@ -20,7 +20,10 @@
     </form>
     {% endif %}
     {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
-    {% if g.running %}Painting now: {{ g.running|join(', ')|replace('_', ' ') }}. Reload in a minute.{% endif %}
+    {% if g.running %}Painting now: {{ g.running|join(', ')|replace('_', ' ') }}.{% endif %}
+  </div>
+  <div id="bb-ticker" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('backyard_birds_admin.progress') }}">
+    <span class="bb-tick-dot" aria-hidden="true"></span><span id="bb-tick-text"></span>
   </div>
   <form method="post" action="{{ url_for('backyard_birds_admin.paint') }}" class="form bb-paint">
     <div class="field">
@@ -221,6 +224,32 @@
 </section>
 
 <script>
+  // The live ticker: what fal.ai is painting right now, polled every few
+  // seconds; the page redraws itself once a painting lands.
+  (function () {
+    const box = document.getElementById('bb-ticker');
+    if (!box) return;
+    const text = document.getElementById('bb-tick-text');
+    let seen = null;
+    const words = (p) => {
+      const parts = [];
+      if (p.running.length) parts.push(p.running.map((r) => `${r.blend ? "today's birds together" : r.name} (${r.style.replace(/ \(.*$/, '').toLowerCase()}, ${r.seconds}s)`).join(' · '));
+      if (p.batches.length) parts.push(`painting every bird in ${p.batches.join(', ')}`);
+      return parts.length ? `Painting now: ${parts.join(' · ')} · ${p.used} of ${p.cap} today` : '';
+    };
+    const tick = async () => {
+      let p;
+      try { p = await (await fetch(box.dataset.progress, { headers: { Accept: 'application/json' } })).json(); } catch { return; }
+      const line = words(p);
+      box.hidden = !line;
+      text.textContent = line;
+      const latest = p.finished.length ? p.finished[p.finished.length - 1].at : 0;
+      if (seen === null) seen = latest;
+      else if (latest > seen && !p.running.length) location.reload();
+    };
+    tick();
+    setInterval(tick, 3000);
+  })();
   (function () {
     const chips = document.querySelectorAll('.bb-chip');
     const cards = document.querySelectorAll('.bb-bird');
@@ -268,6 +297,9 @@
   .bb-inline { display: inline; margin: 0; }
   .bb-link { padding: 0 4px; font-size: inherit; text-decoration: underline; }
   .bb-tools { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin-bottom: 14px; }
+  .bb-ticker { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border: 1px solid var(--t-border); border-radius: 8px; background: var(--t-surface); font-size: 13px; }
+  .bb-tick-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--t-accent, #c8281e); animation: bb-pulse 1.2s ease-in-out infinite; }
+  @keyframes bb-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
   .bb-filter { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 100%; }
   .bb-chip { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--t-border); background: var(--t-surface); color: var(--t-fg-soft); cursor: pointer; }
   .bb-chip.on { background: var(--t-fg, #111); color: var(--t-surface, #fff); border-color: transparent; }

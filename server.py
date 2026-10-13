@@ -1211,6 +1211,10 @@ SHEET_LABEL = 0.017
 # one. Paintings run in daemon threads that outlive the fetch that started
 # them: fal takes 15 to 60 seconds and Tesserae gives a fetch about six.
 _PAINTING: set[str] = set()
+# For the paintings page's live ticker: when each painting started, its bird
+# and style, and the last few to finish.
+_PAINTING_SINCE: dict[str, tuple[float, str, str]] = {}
+_FINISHED: list[tuple[str, float]] = []
 _PAINTING_LOCK = threading.Lock()
 
 
@@ -1402,6 +1406,11 @@ def _start_painting(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
         if key in _PAINTING:
             return False
         _PAINTING.add(key)
+        _PAINTING_SINCE[key] = (
+            time.time(),
+            str(job.get("name") or key),
+            str(job.get("style") or "gould"),
+        )
 
     def run() -> None:
         try:
@@ -1414,6 +1423,9 @@ def _start_painting(job: dict[str, Any], data_dir: Path, fal_key: str) -> bool:
         finally:
             with _PAINTING_LOCK:
                 _PAINTING.discard(key)
+                _PAINTING_SINCE.pop(key, None)
+                _FINISHED.append((key, time.time()))
+                del _FINISHED[:-20]
 
     ctx = contextvars.copy_context()
     threading.Thread(
@@ -3670,6 +3682,40 @@ def blueprint() -> Any:
             has_key=bool(fal_key()),
             plateless=_plateless(dd),
             extra_plates=_extra_plates(dd),
+        )
+
+    @bp.get("/progress")
+    def progress() -> Any:
+        """What is painting right now, for the page's live ticker: each
+        painting under way with its bird, style and seconds so far, the
+        batches running, today's count against the limit, and the last
+        paintings to finish (so the page knows when to redraw)."""
+        from flask import jsonify
+
+        folder = _gen_dir(data_dir())
+        now = time.time()
+        with _PAINTING_LOCK:
+            running = [
+                {
+                    "key": k,
+                    "name": name,
+                    "style": _style(style)[0],
+                    "seconds": int(now - since),
+                    "blend": k.startswith("cluster"),
+                }
+                for k, (since, name, style) in _PAINTING_SINCE.items()
+            ]
+            batches = [_style(t)[0] for t in sorted(_BATCH)]
+            finished = [{"key": k, "at": int(at)} for k, at in _FINISHED]
+        return jsonify(
+            {
+                "running": running,
+                "batches": batches,
+                "finished": finished,
+                "used": _budget_used(folder),
+                "cap": _CAP.get(),
+                "has_key": bool(fal_key()),
+            }
         )
 
     @bp.get("/painting/<path:name>")
