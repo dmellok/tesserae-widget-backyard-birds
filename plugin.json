@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -373,9 +373,12 @@
       "label": "Cluster: style",
       "default": "sheet",
       "show_if": {
-        "layout": "cluster"
+        "layout": "cluster",
+        "cluster_arrange": {
+          "not": "fal"
+        }
       },
-      "help": "The first five print every bird on one page at no cost beyond the pictures: with classic plates they are cut from the plates, no fal needed; with an AI option from each bird's own painting. Blended scene repaints up to six birds together with one more AI pass.",
+      "help": "How the printed page looks: a specimen sheet named underneath, a numbered plate with a key, a wreath round a title, a field notebook with taped-in birds, or a specimen drawer with museum tags. With classic plates the birds are cut from the plates, no fal.ai needed; with an AI option from each bird's own painting. Not used when the arrangement is fal.ai.",
       "choices": [
         {
           "value": "sheet",
@@ -396,10 +399,6 @@
         {
           "value": "drawer",
           "label": "Specimen drawer"
-        },
-        {
-          "value": "blend",
-          "label": "Blended scene (one more AI pass)"
         }
       ]
     },
@@ -464,7 +463,7 @@
       "type": "select",
       "label": "Cluster: arrangement",
       "default": "auto",
-      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the specimen drawer always uses its compartments.",
+      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the drawer always uses its compartments. fal.ai composes the scene repaints up to six birds together as one picture, about US$0.04 a time, and takes the scene options below.",
       "choices": [
         {
           "value": "auto",
@@ -493,16 +492,14 @@
         {
           "value": "heap",
           "label": "Heap, biggest at the bottom"
+        },
+        {
+          "value": "fal",
+          "label": "fal.ai composes the scene (one more AI pass)"
         }
       ],
       "show_if": {
-        "layout": "cluster",
-        "cluster_style": [
-          "sheet",
-          "numbered",
-          "wreath",
-          "notebook"
-        ]
+        "layout": "cluster"
       }
     },
     {
@@ -531,8 +528,8 @@
       ],
       "show_if": {
         "layout": "cluster",
-        "cluster_style": {
-          "not": "blend"
+        "cluster_arrange": {
+          "not": "fal"
         }
       }
     },
@@ -572,24 +569,95 @@
       ],
       "show_if": {
         "layout": "cluster",
-        "cluster_style": [
-          "sheet",
-          "wreath",
-          "notebook",
-          "drawer"
-        ]
+        "cluster_arrange": {
+          "not": "fal"
+        }
+      }
+    },
+    {
+      "name": "cluster_scene",
+      "type": "select",
+      "label": "Cluster: scene (fal.ai)",
+      "default": "auto",
+      "help": "Where fal.ai puts the birds when it composes the scene.",
+      "choices": [
+        {
+          "value": "auto",
+          "label": "An oval vignette on branches"
+        },
+        {
+          "value": "branch",
+          "label": "One shared branch"
+        },
+        {
+          "value": "tree",
+          "label": "Through one tree"
+        },
+        {
+          "value": "birdbath",
+          "label": "Round a bird bath"
+        },
+        {
+          "value": "wire",
+          "label": "In a row on a wire"
+        },
+        {
+          "value": "feeder",
+          "label": "At a feeder"
+        },
+        {
+          "value": "meadow",
+          "label": "In a meadow"
+        },
+        {
+          "value": "sky",
+          "label": "In flight"
+        },
+        {
+          "value": "wetland",
+          "label": "At a wetland"
+        },
+        {
+          "value": "garden",
+          "label": "In a cottage garden"
+        }
+      ],
+      "show_if": {
+        "layout": "cluster",
+        "cluster_arrange": "fal"
+      }
+    },
+    {
+      "name": "cluster_fidelity",
+      "type": "select",
+      "label": "Cluster: how free fal.ai is",
+      "default": "exact",
+      "help": "Exact keeps each bird's pose and place as painted. Free lets fal.ai re-pose and move the birds to suit the scene; truer to the scene, less true to the paintings.",
+      "choices": [
+        {
+          "value": "exact",
+          "label": "Keep each bird as painted"
+        },
+        {
+          "value": "free",
+          "label": "Re-pose and move the birds"
+        }
+      ],
+      "show_if": {
+        "layout": "cluster",
+        "cluster_arrange": "fal"
       }
     },
     {
       "name": "cluster_every",
       "type": "select",
-      "label": "Cluster: re-blend at most (blended scene)",
+      "label": "Cluster: re-compose at most",
       "default": "3",
       "show_if": {
         "layout": "cluster",
-        "cluster_style": "blend"
+        "cluster_arrange": "fal"
       },
-      "help": "Only used by the cluster layout with an AI option. Each bird is painted on its own and kept; the paintings are then blended into one picture by one more AI pass (about US$0.04). When today's busiest birds change, the picture is blended again at most this often.",
+      "help": "Each bird is painted on its own and kept; fal.ai then composes them into one picture (about US$0.04). When today's busiest birds change, the picture is composed again at most this often.",
       "choices": [
         {
           "value": "1",
@@ -608,6 +676,46 @@
           "label": "At most daily"
         }
       ]
+    },
+    {
+      "name": "font",
+      "type": "select",
+      "label": "Type on the printed looks",
+      "default": "classic",
+      "help": "The typeface on the book plate, the full-bleed captions and the cluster pages. The field log, latest visitor, gallery and day chart follow the panel's theme. Classic is an old English book face; the others are bundled too, and Panel theme uses whatever the dashboard uses.",
+      "choices": [
+        {
+          "value": "classic",
+          "label": "Classic (IM Fell English)"
+        },
+        {
+          "value": "playfair",
+          "label": "Editorial italic (Playfair Display)"
+        },
+        {
+          "value": "typewriter",
+          "label": "Typewriter (Special Elite)"
+        },
+        {
+          "value": "hand",
+          "label": "Handwritten (Caveat)"
+        },
+        {
+          "value": "modern",
+          "label": "Modern (Archivo)"
+        },
+        {
+          "value": "theme",
+          "label": "Panel theme"
+        }
+      ],
+      "show_if": {
+        "layout": [
+          "plate",
+          "bleed",
+          "cluster"
+        ]
+      }
     },
     {
       "name": "panel",

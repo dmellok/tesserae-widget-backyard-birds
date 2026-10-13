@@ -904,11 +904,8 @@ GEN_STYLE_IDS = tuple(GEN_STYLES)
 GEN_BLEND = (
     "This picture is a collage of {n} birds, each painted on its own: {birds}. Repaint it "
     "as one seamless picture, {style}, with all the birds together in a single natural "
-    "scene: the birds gathered in an oval cluster, like a Victorian vignette, on branches "
-    "and foliage that join them, one continuous background, the same light and paper "
-    "throughout. Keep every bird's species, plumage, markings, pose and size as painted, "
-    "and keep each about where it is in the oval. No text, no labels, no numbers, no "
-    "border, no signature."
+    "scene: {scene}, one continuous background, the same light and paper throughout. "
+    "{fidelity} No text, no labels, no numbers, no border, no signature."
 )
 GEN_ONE = (
     "Paint the bird in the reference photo, the {name} ({sci}), as {style}. Keep the "
@@ -922,7 +919,34 @@ CLUSTER_MAX = 6
 # into one scene by a final AI pass.
 CLUSTER_STYLES = ("sheet", "numbered", "wreath", "notebook", "drawer", "blend")
 # Where the birds go on a printed cluster page; "auto" is the look's own.
-ARRANGEMENTS = ("auto", "oval", "circle", "ring", "rows", "scatter", "heap")
+ARRANGEMENTS = ("auto", "oval", "circle", "ring", "rows", "scatter", "heap", "fal")
+# Where fal.ai puts the birds when it composes the scene (arrangement "fal").
+SCENES = {
+    "auto": "the birds gathered in an oval cluster, like a Victorian vignette, on branches and foliage that join them",
+    "branch": "all perched along one shared branch",
+    "tree": "perched through the branches of one tree",
+    "birdbath": "gathered round a stone bird bath in a garden",
+    "wire": "sitting in a row along a telephone wire against the sky",
+    "feeder": "gathered at and around a hanging bird feeder",
+    "meadow": "on the ground and low stems of a wildflower meadow",
+    "sky": "all in flight together across an open sky",
+    "wetland": "among reeds and still water at the edge of a wetland",
+    "garden": "in a cottage garden, on a fence, shrubs and a path",
+}
+FIDELITY = {
+    "exact": "Keep every bird's species, plumage, markings, pose and size as painted, and keep each about where it is.",
+    "free": "Keep every bird's species, plumage and markings, but re-pose and move the birds freely to make the scene natural.",
+}
+# The type on the printed looks (book plate, full-bleed captions, cluster
+# pages): bundled font groups and the faces the client uses for them.
+FONTS = {
+    "classic": (),
+    "playfair": ("playfair",),
+    "typewriter": ("special_elite",),
+    "hand": ("caveat",),
+    "modern": ("archivo_black", "archivo_narrow"),
+    "theme": (),
+}
 # How big each bird is drawn: true to size, rarest or busiest biggest, alike.
 SIZINGS = ("true", "rare", "busy", "same")
 # What may be printed under each bird on a cluster page, in this order.
@@ -955,9 +979,15 @@ def _pkey(slug: str, style: str) -> str:
     return slug if style == "gould" else f"{slug}--{style}"
 
 
-def _blend_key(style: str) -> str:
-    """File key for the cluster's blended picture in a style."""
-    return f"cluster--{style}"
+def _blend_key(style: str, scene: str = "auto", fidelity: str = "exact") -> str:
+    """File key for the cluster's blended picture in a style; each scene and
+    fidelity keeps its own, the first (auto, exact) under the old bare key."""
+    base = (
+        "cluster"
+        if (scene, fidelity) == ("auto", "exact")
+        else f"cluster_{scene}_{fidelity}"
+    )
+    return f"{base}--{style}"
 
 
 def _gen_dir(data_dir: Path) -> Path:
@@ -1033,6 +1063,8 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
             n=len(birds),
             birds="; ".join(f"the {b['name']} ({b['sci']})" for b in birds),
             style=how,
+            scene=SCENES.get(job.get("scene") or "auto", SCENES["auto"]),
+            fidelity=FIDELITY.get(job.get("fidelity") or "exact", FIDELITY["exact"]),
         )
         ref_credit = ""
     else:
@@ -1613,6 +1645,8 @@ def _cluster(
     fal_key: str,
     data_dir: Path,
     levels: str,
+    scene: str = "auto",
+    fidelity: str = "exact",
 ) -> tuple[dict[str, Any], list[str]]:
     """Today's busiest birds in one seamless picture.
 
@@ -1652,7 +1686,7 @@ def _cluster(
             else None
         )
         waiting = [b["name"] for b in birds if not b["painted"]]
-        bkey = _blend_key(style)
+        bkey = _blend_key(style, scene, fidelity)
         blend = _painting(bkey, SIZE["cluster"], data_dir, levels)
         bmeta = _read_json(_gen_dir(data_dir) / f"{bkey}.json", {}) if blend else {}
         bmeta = bmeta if isinstance(bmeta, dict) else {}
@@ -1672,6 +1706,8 @@ def _cluster(
                     {
                         "key": bkey,
                         "style": style,
+                        "scene": scene,
+                        "fidelity": fidelity,
                         "collage": made["sheet"],
                         "tag": made["tag"],
                         "aspect": aspect,
@@ -2422,6 +2458,15 @@ def fetch(
     cluster_lines = tuple(v for v in LABEL_LINES if v in picked)
     cluster_arrange = _choice(options.get("cluster_arrange"), ARRANGEMENTS)
     cluster_sizing = _choice(options.get("cluster_sizing"), SIZINGS)
+    cluster_scene = _choice(options.get("cluster_scene"), tuple(SCENES))
+    cluster_fidelity = _choice(options.get("cluster_fidelity"), tuple(FIDELITY))
+    # the blended scene is the "fal" arrangement; cells saved with the old
+    # Blended scene style still get it
+    if cluster_style == "blend":
+        cluster_arrange = "fal"
+    elif cluster_arrange == "fal":
+        cluster_style = "blend"
+    font = _choice(options.get("font"), tuple(FONTS))
     cluster_n = _int(
         options.get("cluster_size"),
         4 if cluster_style == "blend" else 12,
@@ -2548,6 +2593,8 @@ def fetch(
                 fal_key,
                 data_dir,
                 levels,
+                cluster_scene,
+                cluster_fidelity,
             )
             notices += [m for m in more if m not in notices]
 
@@ -2566,6 +2613,8 @@ def fetch(
         groups = FONT_GROUPS["engraved"]
         if layout == "cluster" and cluster_style == "notebook":
             groups = (*groups, "caveat")
+    if layout in ("bleed", "plate", "cluster"):
+        groups = tuple(dict.fromkeys((*groups, *FONTS[font])))
     credits = []
     pictured = [*shown, *([latest] if latest else [])]
     if cluster:
@@ -2584,6 +2633,7 @@ def fetch(
         "pictures": pictures,
         "photo_tone": photo_tone,
         "art_style": art_style,
+        "font": font,
         "cluster": cluster,
         "panel": levels,
         "chart_labels": chart_labels,
@@ -2615,7 +2665,9 @@ def fetch(
 # Admin page: the AI paintings
 # ----------------------------------------------------------------------
 
-_SLUG_RE = re.compile(r"[a-z0-9_]{1,60}(--[a-z]{1,20})?")
+_SLUG_RE = re.compile(
+    r"[a-z0-9_]{1,60}(--[a-z]{1,20})?"
+)  # slug, cluster_<scene>_<fidelity>, with --style
 _ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z]{1,20})?)__(\d{8}-\d{6})")
 
 
@@ -2647,13 +2699,14 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
     def entry(key: str) -> dict[str, Any]:
         base, _, style = key.partition("--")
         style = style if style in GEN_STYLES else "gould"
+        scene = base.split("_")[1] if base.startswith("cluster_") else ""
         return entries.setdefault(
             key,
             {
                 "slug": key,
-                "cluster": base == "cluster",
-                "name": "Today's birds together"
-                if base == "cluster"
+                "cluster": base.startswith("cluster"),
+                "name": ("Today's birds together" + (f", {scene}" if scene else ""))
+                if base.startswith("cluster")
                 else base.replace("_", " ").capitalize(),
                 "birds": [],
                 "sci": "",

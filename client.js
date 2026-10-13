@@ -455,7 +455,7 @@ export default function render(shadow, ctx) {
   installFonts(shadow, d.font_css);
   shadow.innerHTML = `
     <link rel="stylesheet" href="/static/style/spectra-widgets.css">
-    <div class="bb lay-${esc(layout)} size-${esc(size)} lv-${esc(d.panel || 'colour')}">${body}</div>
+    <div class="bb lay-${esc(layout)} size-${esc(size)} lv-${esc(d.panel || 'colour')} font-${esc(d.font || 'classic')}">${body}</div>
     <style>
       :host { display: block; height: 100%; }
       .bb {
@@ -467,7 +467,14 @@ export default function render(shadow, ctx) {
         --hi: var(--accent-2, #f2c230); --alert: var(--accent-1, #c8281e);
         --muted: var(--surface-sunken, #e9e6df);
         --rule: clamp(2px, 0.5cqmin, 5px);
+        /* the type on the printed looks: a roman and a small-caps face */
+        --bb-serif: 'IM Fell English', Georgia, serif; --bb-sc: 'IM Fell English SC', Georgia, serif;
       }
+      .font-playfair { --bb-serif: 'Playfair Display', Georgia, serif; --bb-sc: 'Playfair Display', Georgia, serif; }
+      .font-typewriter { --bb-serif: 'Special Elite', 'Courier New', monospace; --bb-sc: 'Special Elite', 'Courier New', monospace; }
+      .font-hand { --bb-serif: Caveat, cursive; --bb-sc: Caveat, cursive; }
+      .font-modern { --bb-serif: 'Archivo Narrow', Arial, sans-serif; --bb-sc: 'Archivo Black', Arial, sans-serif; }
+      .font-theme { --bb-serif: var(--font-family, inherit); --bb-sc: var(--font-family, inherit); }
       .ico { width: 100%; height: 100%; fill: currentColor; display: block; }
       img { display: block; width: 100%; height: 100%; object-fit: cover; }
       .nopic { background: var(--muted); color: var(--text-secondary, #666); padding: 18%; }
@@ -590,10 +597,10 @@ export default function render(shadow, ctx) {
       .pframe { flex: 0 0 42%; background: #fffdf6; padding: 1.4cqmin; box-shadow: 0 0 0 1px #c9b98f; }
       .pp { width: 100%; height: 100%; overflow: hidden; }
       .pp img { object-fit: contain; }
-      .ptext { flex: 1; min-width: 0; display: flex; flex-direction: column; font-family: 'IM Fell English', Georgia, serif; }
-      .pkick { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.8cqmin; letter-spacing: .14em; }
+      .ptext { flex: 1; min-width: 0; display: flex; flex-direction: column; font-family: var(--bb-serif); }
+      .pkick { font-family: var(--bb-sc); font-size: 2.8cqmin; letter-spacing: .14em; }
       .pkick.sp { margin-top: 3.6cqmin; }
-      .pname { font-family: 'IM Fell English SC', Georgia, serif; font-size: 8.8cqmin; letter-spacing: .06em; line-height: 1; margin-top: 1.4cqmin; }
+      .pname { font-family: var(--bb-sc); font-size: 8.8cqmin; letter-spacing: .06em; line-height: 1; margin-top: 1.4cqmin; }
       .psci { font-style: italic; font-size: 4.2cqmin; margin-top: .6cqmin; }
       .prule { height: 1px; background: #2a2116; margin: 2.6cqmin 0 2cqmin; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 #2a2116; }
       .pline { font-style: italic; font-size: 3.6cqmin; }
@@ -689,10 +696,10 @@ export default function render(shadow, ctx) {
       .fo-frame { position: absolute; inset: 2.6cqmin; border: max(2px, .55cqmin) solid currentColor; }
       .fo-frame::after { content: ''; position: absolute; inset: .9cqmin; border: 1px solid currentColor; }
       .cap-folio .bcredit { top: 0; left: 0; right: 0; max-width: none; text-align: center; background: transparent; color: inherit; padding: .45cqmin 3cqmin 0; font-size: 1.5cqmin; }
-      .fo-head { position: absolute; top: 5.2cqmin; left: 6.4cqmin; right: 6.4cqmin; display: flex; justify-content: space-between; font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.8cqmin; letter-spacing: .16em; }
+      .fo-head { position: absolute; top: 5.2cqmin; left: 6.4cqmin; right: 6.4cqmin; display: flex; justify-content: space-between; font-family: var(--bb-sc); font-size: 2.8cqmin; letter-spacing: .16em; }
       .fo-head span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; padding-right: 3cqmin; }
-      .fo-cap { position: absolute; left: 6.4cqmin; right: 6.4cqmin; bottom: 5.4cqmin; height: 18cqmin; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
-      .fo-n { font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .08em; line-height: 1.05; white-space: nowrap; }
+      .fo-cap { position: absolute; left: 6.4cqmin; right: 6.4cqmin; bottom: 5.4cqmin; height: 18cqmin; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; font-family: var(--bb-serif); }
+      .fo-n { font-family: var(--bb-sc); letter-spacing: .08em; line-height: 1.05; white-space: nowrap; }
       .fo-s { font-style: italic; font-size: 3.6cqmin; margin-top: .4cqmin; }
       .fo-l { font-style: italic; font-size: 2.6cqmin; margin-top: 1.2cqmin; padding-top: 1.1cqmin; border-top: 1px solid currentColor; opacity: .85; }
 
@@ -700,11 +707,11 @@ export default function render(shadow, ctx) {
       .cap-museum { color: #1d1a16; --mz: 1; }
       .cap-museum .bp { right: 38%; }
       .mu { position: absolute; right: 4cqmin; top: 50%; width: calc(38% - 7cqmin); transform: translateY(-50%); box-sizing: border-box; background: #fbf8ef; color: #1d1a16;
-            border: max(2px, .45cqmin) solid #1d1a16; box-shadow: inset 0 0 0 .7cqmin #fbf8ef, inset 0 0 0 calc(.7cqmin + 1px) #1d1a16; padding: calc(3cqmin * var(--mz)) calc(3.2cqmin * var(--mz)) calc(2.6cqmin * var(--mz)); font-family: 'IM Fell English', Georgia, serif; }
-      .mu-h { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(3.6cqmin * var(--mz)); letter-spacing: .1em; text-align: center; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            border: max(2px, .45cqmin) solid #1d1a16; box-shadow: inset 0 0 0 .7cqmin #fbf8ef, inset 0 0 0 calc(.7cqmin + 1px) #1d1a16; padding: calc(3cqmin * var(--mz)) calc(3.2cqmin * var(--mz)) calc(2.6cqmin * var(--mz)); font-family: var(--bb-serif); }
+      .mu-h { font-family: var(--bb-sc); font-size: calc(3.6cqmin * var(--mz)); letter-spacing: .1em; text-align: center; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .mu-h2 { font-size: calc(2.2cqmin * var(--mz)); font-style: italic; text-align: center; margin-top: .6cqmin; padding-bottom: 1.4cqmin; border-bottom: 1px solid #1d1a16; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .mu-f { display: grid; grid-template-columns: auto 1fr; column-gap: 2cqmin; margin: 1.2cqmin 0 0; align-items: baseline; }
-      .mu-f dt { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(2.5cqmin * var(--mz)); letter-spacing: .06em; }
+      .mu-f dt { font-family: var(--bb-sc); font-size: calc(2.5cqmin * var(--mz)); letter-spacing: .06em; }
       .mu-f dd { margin: 0; font-family: Caveat, cursive; font-size: calc(4.3cqmin * var(--mz)); line-height: 1.25; color: #23324a; border-bottom: 1px dotted #6d6457; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .mu-f dd.it { font-style: italic; white-space: normal; line-height: 1.05; padding: .5cqmin 0 .4cqmin; }
 
@@ -712,9 +719,9 @@ export default function render(shadow, ctx) {
          round a 24-hour dial */
       .cap-figure { color: #1f1a14; }
       .cap-figure .bp { right: 47%; }
-      .fg { position: absolute; left: 55%; right: 4cqmin; top: 4cqmin; bottom: 4cqmin; display: flex; flex-direction: column; justify-content: center; gap: 2cqmin; font-family: 'IM Fell English', Georgia, serif; }
-      .fg-k { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.8cqmin; letter-spacing: .16em; }
-      .fg-n { font-family: 'IM Fell English SC', Georgia, serif; line-height: 1; letter-spacing: .03em; margin-top: .6cqmin; }
+      .fg { position: absolute; left: 55%; right: 4cqmin; top: 4cqmin; bottom: 4cqmin; display: flex; flex-direction: column; justify-content: center; gap: 2cqmin; font-family: var(--bb-serif); }
+      .fg-k { font-family: var(--bb-sc); font-size: 2.8cqmin; letter-spacing: .16em; }
+      .fg-n { font-family: var(--bb-sc); line-height: 1; letter-spacing: .03em; margin-top: .6cqmin; }
       .fg-s { font-style: italic; font-size: 3.4cqmin; margin-top: .6cqmin; }
       .fg-dial { width: 100%; flex: 1 1 0; min-height: 0; max-height: 52cqh; overflow: visible; }
       .fg-dial .g { fill: none; stroke: currentColor; stroke-width: .5; stroke-dasharray: 1.5 2.5; opacity: .55; }
@@ -723,7 +730,7 @@ export default function render(shadow, ctx) {
       .fg-dial .br line { stroke: currentColor; stroke-width: 6.4; }
       .fg-dial .br line.pk { stroke: #9b2c1c; }
       .fg-dial .now { stroke: #9b2c1c; stroke-width: 2.6; }
-      .fg-dial .lb text { font-family: 'IM Fell English', Georgia, serif; font-size: 11px; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
+      .fg-dial .lb text { font-family: var(--bb-serif); font-size: 11px; fill: currentColor; text-anchor: middle; dominant-baseline: middle; }
       .fg-c { font-size: 2.6cqmin; line-height: 1.35; border-top: 1px solid currentColor; padding-top: 1.4cqmin; }
       .fg-c b { font-weight: 400; font-style: italic; }
 
@@ -735,9 +742,9 @@ export default function render(shadow, ctx) {
       .cap-cyanotype .bp img { filter: grayscale(1) invert(1) contrast(1.55) brightness(1.08); mix-blend-mode: screen; }
       .cap-cyanotype .bp.nopic { color: #f3f6f9; }
       .cy-edge { position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 7cqmin 1.5cqmin rgba(9, 28, 54, .7); }
-      .cy { position: absolute; left: 5cqmin; right: 5cqmin; bottom: 3.6cqmin; height: 12cqmin; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cy { position: absolute; left: 5cqmin; right: 5cqmin; bottom: 3.6cqmin; height: 12cqmin; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; font-family: var(--bb-serif); }
       .cy-n { font-style: italic; line-height: 1.1; white-space: nowrap; }
-      .cy-s { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.6cqmin; letter-spacing: .14em; margin-top: 1cqmin; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+      .cy-s { font-family: var(--bb-sc); font-size: 2.6cqmin; letter-spacing: .14em; margin-top: 1cqmin; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
       .cap-cyanotype .bcredit { background: rgba(9, 28, 54, .6); color: #f3f6f9; }
 
       @container (max-aspect-ratio: 1) {
@@ -788,13 +795,13 @@ export default function render(shadow, ctx) {
       .cl-mont figure { margin: 0; position: relative; min-height: 0; display: flex; background: #fffdf6; box-shadow: 0 0 0 1px #c9b98f; }
       .cl-tile { flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
       .cl-tile.fit { padding: 1cqmin; }
-      .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: 'IM Fell English', Georgia, serif; font-size: 3.4cqmin; line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
-      .cl-key { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-family: 'IM Fell English', Georgia, serif; }
+      .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: var(--bb-serif); font-size: 3.4cqmin; line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
+      .cl-key { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-family: var(--bb-serif); }
       .cl-key ol.fitrows { flex: 0 1 auto; max-height: 100%; }
       /* the key's header lines never give up height to the list */
       .cl-k, .cl-t, .cl-f { flex: 0 0 auto; }
-      .cl-k { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.6cqmin; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .cl-t { font-family: 'IM Fell English SC', Georgia, serif; font-size: 6cqmin; letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
+      .cl-k { font-family: var(--bb-sc); font-size: 2.6cqmin; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .cl-t { font-family: var(--bb-sc); font-size: 6cqmin; letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
       .cl ol { list-style: none; margin: 2cqmin 0 0; padding: 0; }
       .cl li { display: flex; align-items: baseline; gap: 1.4cqmin; padding: .7cqmin 0; border-bottom: 1px solid #b7a67c; font-size: 3.4cqmin; }
       .cl li em { font-style: normal; min-width: 3.4cqmin; }
@@ -802,7 +809,7 @@ export default function render(shadow, ctx) {
       .cl li span i { margin-left: 1.2cqmin; font-size: 2.6cqmin; opacity: .75; }
       .cl li b { font-weight: 400; }
       .cl-f { margin-top: 1.6cqmin; font-style: italic; font-size: 2.6cqmin; opacity: .8; }
-      .lay-cluster .credit { font-family: 'IM Fell English', Georgia, serif; font-style: italic; }
+      .lay-cluster .credit { font-family: var(--bb-serif); font-style: italic; }
       @container (max-aspect-ratio: 1) {
         .cl { flex-direction: column; gap: 2.6cqmin; }
         .cl-key { flex: 0 0 auto; justify-content: flex-start; }
@@ -834,12 +841,12 @@ export default function render(shadow, ctx) {
       .cap-stamp .bp { top: 16cqmin; left: 11cqmin; right: 11cqmin; bottom: 23cqmin; z-index: 1; }
       .st-top, .st-val, .st-bot { z-index: 2; }
       .cap-stamp .bp.fit { padding: 0; }
-      .st-top { position: absolute; top: 9.6cqmin; left: 10cqmin; right: 22cqmin; font-family: 'IM Fell English SC', Georgia, serif; font-size: 4cqmin; letter-spacing: .2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .st-val { position: absolute; top: 9cqmin; right: 10cqmin; text-align: right; font-family: 'IM Fell English', Georgia, serif; line-height: .9; }
+      .st-top { position: absolute; top: 9.6cqmin; left: 10cqmin; right: 22cqmin; font-family: var(--bb-sc); font-size: 4cqmin; letter-spacing: .2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .st-val { position: absolute; top: 9cqmin; right: 10cqmin; text-align: right; font-family: var(--bb-serif); line-height: .9; }
       .st-val b { display: block; font-weight: 400; font-size: 7cqmin; }
       .st-val span { font-style: italic; font-size: 2.4cqmin; }
-      .st-bot { position: absolute; left: 10cqmin; right: 10cqmin; bottom: 9.6cqmin; height: 12cqmin; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: 'IM Fell English', Georgia, serif; border-top: 1px solid #2a2116; }
-      .st-n { font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .06em; white-space: nowrap; line-height: 1.05; }
+      .st-bot { position: absolute; left: 10cqmin; right: 10cqmin; bottom: 9.6cqmin; height: 12cqmin; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: var(--bb-serif); border-top: 1px solid #2a2116; }
+      .st-n { font-family: var(--bb-sc); letter-spacing: .06em; white-space: nowrap; line-height: 1.05; }
       .st-s { font-style: italic; font-size: 3cqmin; }
 
       /* woodblock: a kacho-e print, the title in a tall cartouche down the
@@ -847,11 +854,11 @@ export default function render(shadow, ctx) {
       .cap-woodblock { color: #22201b; }
       .cap-woodblock .bp { right: 16cqmin; }
       .wb-col { position: absolute; top: 5cqmin; right: 4cqmin; bottom: 5cqmin; width: 9cqmin; display: flex; flex-direction: column; align-items: center; gap: 2cqmin; }
-      .wb-title, .wb-sub { writing-mode: vertical-rl; background: #f6efdc; border: 1px solid currentColor; box-shadow: inset 0 0 0 .6cqmin #f6efdc, inset 0 0 0 calc(.6cqmin + 1px) currentColor; padding: 2.4cqmin 1.6cqmin; font-family: 'IM Fell English SC', Georgia, serif; max-height: 64%; overflow: hidden; }
+      .wb-title, .wb-sub { writing-mode: vertical-rl; background: #f6efdc; border: 1px solid currentColor; box-shadow: inset 0 0 0 .6cqmin #f6efdc, inset 0 0 0 calc(.6cqmin + 1px) currentColor; padding: 2.4cqmin 1.6cqmin; font-family: var(--bb-sc); max-height: 64%; overflow: hidden; }
       .wb-title { font-size: 5cqmin; letter-spacing: .12em; white-space: nowrap; }
-      .wb-sub { font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: 3cqmin; max-height: 30%; white-space: nowrap; }
-      .wb-note { position: absolute; left: 3.6cqmin; top: 5cqmin; writing-mode: vertical-rl; font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: 2.6cqmin; opacity: .8; }
-      .wb-seal { position: absolute; left: 3cqmin; bottom: 5cqmin; width: 7.4cqmin; height: 7.4cqmin; display: flex; align-items: center; justify-content: center; background: #b5302a; color: #f6efdc; font-family: 'IM Fell English SC', Georgia, serif; font-size: 4cqmin; letter-spacing: .02em; box-shadow: inset 0 0 0 .5cqmin #b5302a, inset 0 0 0 .7cqmin #f6efdc; }
+      .wb-sub { font-family: var(--bb-serif); font-style: italic; font-size: 3cqmin; max-height: 30%; white-space: nowrap; }
+      .wb-note { position: absolute; left: 3.6cqmin; top: 5cqmin; writing-mode: vertical-rl; font-family: var(--bb-serif); font-style: italic; font-size: 2.6cqmin; opacity: .8; }
+      .wb-seal { position: absolute; left: 3cqmin; bottom: 5cqmin; width: 7.4cqmin; height: 7.4cqmin; display: flex; align-items: center; justify-content: center; background: #b5302a; color: #f6efdc; font-family: var(--bb-sc); font-size: 4cqmin; letter-spacing: .02em; box-shadow: inset 0 0 0 .5cqmin #b5302a, inset 0 0 0 .7cqmin #f6efdc; }
 
       /* cameo: the bird in an oval window cut into a dark mat, as on a
          Victorian cabinet card */
@@ -860,8 +867,8 @@ export default function render(shadow, ctx) {
       .cap-cameo .bp.fit { padding: 7%; }
       .cm-ring { position: absolute; top: 5%; bottom: 21%; left: 20%; right: 20%; border-radius: 50%; pointer-events: none;
         box-shadow: 0 0 0 .5cqmin #c9b07a, 0 0 0 1.5cqmin #2e3a32, 0 0 0 1.7cqmin #c9b07a; }
-      .cm-cap { position: absolute; left: 5cqmin; right: 5cqmin; bottom: 3%; height: 14%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
-      .cm-n { font-family: 'IM Fell English SC', Georgia, serif; letter-spacing: .1em; white-space: nowrap; line-height: 1.05; }
+      .cm-cap { position: absolute; left: 5cqmin; right: 5cqmin; bottom: 3%; height: 14%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font-family: var(--bb-serif); }
+      .cm-n { font-family: var(--bb-sc); letter-spacing: .1em; white-space: nowrap; line-height: 1.05; }
       .cm-s { font-style: italic; font-size: 3cqmin; margin-top: .6cqmin; opacity: .85; }
 
       /* nouveau: an arched frame with a title panel, after the posters of
@@ -897,13 +904,13 @@ export default function render(shadow, ctx) {
       .sh { flex: 1; min-height: 0; display: flex; container-type: size; }
       .sh-s { container-type: size; color: #2a2116; }
       .sh-ln { display: block; }
-      .sh-sci { font-family: 'IM Fell English', Georgia, serif; font-style: italic; letter-spacing: 0; }
-      .sh-sm { font-family: 'IM Fell English', Georgia, serif; font-style: italic; letter-spacing: 0; font-size: .85em; opacity: .85; }
-      .sh-new { display: inline-block; background: var(--alert, #c8281e); color: #fff; font-family: 'IM Fell English SC', Georgia, serif; padding: .05em .4em .1em; margin-top: .15em; font-size: .85em; }
+      .sh-sci { font-family: var(--bb-serif); font-style: italic; letter-spacing: 0; }
+      .sh-sm { font-family: var(--bb-serif); font-style: italic; letter-spacing: 0; font-size: .85em; opacity: .85; }
+      .sh-new { display: inline-block; background: var(--alert, #c8281e); color: #fff; font-family: var(--bb-sc); padding: .05em .4em .1em; margin-top: .15em; font-size: .85em; }
       .lv-gray16 .sh-new, .lv-gray4 .sh-new, .lv-mono .sh-new { background: #000; }
-      .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; text-align: center; line-height: 1.15; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; }
-      .sh-c { position: absolute; left: 0; right: 0; bottom: 1.6%; text-align: center; font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: calc(var(--lf) * 100cqh); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .sh-numbered .sh-l { font-family: 'IM Fell English', Georgia, serif; font-size: calc(var(--lf) * 170cqh); }
+      .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; text-align: center; line-height: 1.15; font-family: var(--bb-sc); font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; }
+      .sh-c { position: absolute; left: 0; right: 0; bottom: 1.6%; text-align: center; font-family: var(--bb-serif); font-style: italic; font-size: calc(var(--lf) * 100cqh); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sh-numbered .sh-l { font-family: var(--bb-serif); font-size: calc(var(--lf) * 170cqh); }
       @container (max-aspect-ratio: 1) {
         /* the plate keeps most of a tall cell; the key takes two columns */
         .cl-numbered .cl-key { max-height: 38%; flex: 0 0 auto; justify-content: flex-start; }
@@ -915,16 +922,16 @@ export default function render(shadow, ctx) {
         .cl-numbered .cl-key ol.fitrows > li { width: calc(50% - 2cqmin); margin-right: 4cqmin; }
         .cl-numbered .cl-t { font-size: 5cqmin; }
       }
-      .sh-w { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 34%; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
-      .sh-wk { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 110cqh); letter-spacing: .16em; }
-      .sh-wt { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 300cqh); line-height: 1.05; margin: .4em 0 .2em; }
+      .sh-w { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 34%; text-align: center; font-family: var(--bb-serif); }
+      .sh-wk { font-family: var(--bb-sc); font-size: calc(var(--lf) * 110cqh); letter-spacing: .16em; }
+      .sh-wt { font-family: var(--bb-sc); font-size: calc(var(--lf) * 300cqh); line-height: 1.05; margin: .4em 0 .2em; }
       .sh-wd { font-style: italic; font-size: calc(var(--lf) * 110cqh); }
       .sh-notebook { color: #23324a; }
       .sh-notebook .sh-l { font-family: Caveat, cursive; font-size: calc(var(--lf) * 150cqh); letter-spacing: 0; }
       .sh-nb { position: absolute; left: 12%; right: 3%; top: 2.2%; font-family: Caveat, cursive; font-size: calc(var(--lf) * 190cqh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sh-drawer .sh-l { background: #fbf8ef; color: #1d1a16; padding: .25em .6em .2em; box-shadow: 0 0 0 1px #6d6457; transform: translate(-50%, 0); max-width: 30%; overflow: hidden; text-overflow: ellipsis; }
       .sh-plaque { position: absolute; left: 50%; top: 0; height: 5%; transform: translateX(-50%); display: flex; align-items: center; padding: 0 1.2em; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        background: #c9a95f; color: #2a2116; box-shadow: inset 0 0 0 1px #8a6f33; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 110cqh); letter-spacing: .12em; }
+        background: #c9a95f; color: #2a2116; box-shadow: inset 0 0 0 1px #8a6f33; font-family: var(--bb-sc); font-size: calc(var(--lf) * 110cqh); letter-spacing: .12em; }
       .lv-gray16 .sh, .lv-gray4 .sh, .lv-mono .sh { background: #fff !important; }
       .lv-gray16 .sh-plaque, .lv-gray4 .sh-plaque, .lv-mono .sh-plaque { background: #fff; color: #000; box-shadow: inset 0 0 0 1px #000; }
       .lv-gray16 .sh-notebook, .lv-gray4 .sh-notebook, .lv-mono .sh-notebook { color: #000; }

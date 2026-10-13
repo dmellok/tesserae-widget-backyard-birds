@@ -78,7 +78,7 @@ Four more looks print the same paintings differently:
 - **Field notebook**: the birds taped onto ruled paper at a slight tilt, with handwritten names.
 - **Specimen drawer**: each bird in its own compartment on felt, in a wooden frame, with a museum tag.
 
-**Blended scene** shows up to six birds as one picture: once all of them are painted they are arranged in an oval and one more fal.ai pass repaints them together, with one branch, one background and one light. The blend is kept and made again when the busiest birds change, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default), at about US$0.04 a blend.
+**Arrangement: fal.ai composes the scene** shows up to six birds as one picture (this was the Blended scene style): once all of them are painted they are arranged in an oval and one more fal.ai pass repaints them together, with one branch, one background and one light. Two sub-options steer it: **Scene** (an oval vignette on branches, one shared branch, through one tree, round a bird bath, in a row on a wire, at a feeder, in a meadow, in flight, at a wetland, in a cottage garden) and **how free fal.ai is** (keep each bird as painted, or let it re-pose and move them). The picture is kept, one per scene and style, and composed again when the busiest birds change, at most as often as **Re-compose at most** allows (hourly to daily, three hours by default), at about US$0.04 a time.
 
 AI paintings are asked for as a single bird and its perch alone on plain paper. The cut-out finds the paper by spreading in from the picture's edges, so a white bird outlined on white paper stays whole, and a painted grey ground or shadow under the bird is dropped with the paper. Progress notes (a painting under way, the day's limit reached) show on the paintings page, not on the panel.
 
@@ -114,6 +114,8 @@ python tools/build_plates.py --accept "Turdus merula=1" "Parus major"  # take a 
 It keeps public-domain still images only, prefers known plate series (Audubon, Gould, Naumann, Lear, Keulemans, Thorburn, Siebold's *Fauna Japonica* and others), and crops each to the drawing, ignoring plate marks and captions. Pull requests that add reviewed plates are welcome.
 
 ## Fonts
+
+**Type on the printed looks** picks the typeface for the book plate, the full-bleed captions and the cluster pages: Classic (IM Fell English, the default), editorial italic (Playfair Display), typewriter (Special Elite), handwritten (Caveat), modern (Archivo) or the panel's own theme font. The field log, latest visitor, gallery and day chart always follow the panel's theme.
 
 The caption styles bundle Playfair Display, Caveat, IM Fell English, Archivo Black and Archivo Narrow (SIL Open Font License) and Special Elite (Apache 2.0); their licences are in `fonts/`. Only the faces a style needs are sent with a render. On the black-and-white panel setting the fine serif and handwritten strokes are thickened so they survive dithering.
 

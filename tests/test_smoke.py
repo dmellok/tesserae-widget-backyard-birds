@@ -785,3 +785,48 @@ def test_every_art_style_makes_a_key_and_a_prompt():
             name="Eurasian Blackbird", sci="Turdus merula", style=how
         )
         assert "plain" in prompt and "Eurasian Blackbird" in prompt
+
+
+def test_fal_arrangement_takes_a_scene_and_fidelity(tmp_path, offline):
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "pictures": "gen",
+        "cluster_arrange": "fal",
+        "cluster_scene": "wire",
+        "cluster_fidelity": "free",
+        "cluster_size": 2,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    with _at(8):
+        for _ in range(4):
+            r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+    blend = json.loads(offline.bodies[-1])
+    assert "telephone wire" in blend["prompt"] and "re-pose" in blend["prompt"]
+    assert r["cluster"]["pic"]["kind"] == "generated"
+    assert (tmp_path / "gen" / "cluster_wire_free--gould.jpg").exists()
+    (entry,) = [e for e in server._gallery(tmp_path)["birds"] if e["cluster"]]
+    assert "wire" in entry["name"]
+
+
+def test_font_choice_inlines_its_faces(tmp_path, offline):
+    with _at(8):
+        tw = server.fetch(
+            {**MELBOURNE, "layout": "plate", "pictures": "none", "font": "typewriter"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        theme = server.fetch(
+            {**MELBOURNE, "layout": "plate", "pictures": "none", "font": "theme"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        lst = server.fetch(
+            {**MELBOURNE, "layout": "list", "pictures": "none", "font": "typewriter"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert tw["font"] == "typewriter" and "Special Elite" in tw["font_css"]
+    assert "Special Elite" not in theme["font_css"]
+    assert lst["font_css"] == "", "theme layouts carry no bundled faces"
