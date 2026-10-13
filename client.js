@@ -234,8 +234,11 @@ function strip(d) {
 }
 
 function foot(d) {
-  if (d.footer === false) return '';
-  const bits = [...(d.notices || []), ...(d.credits || [])];
+  /* show: status and credits; credits: the attributions alone; hide (or the
+     older false): nothing */
+  const mode = d.footer === false ? 'hide' : d.footer || 'show';
+  if (mode === 'hide') return '';
+  const bits = [...(mode === 'credits' ? [] : d.notices || []), ...(d.credits || [])];
   return bits.length ? `<div class="credit">${bits.map(esc).join(' · ')}</div>` : '';
 }
 

@@ -1305,17 +1305,21 @@
     {
       "name": "footer",
       "type": "select",
-      "label": "Credits bar",
+      "label": "Line at the bottom",
       "default": "show",
-      "help": "The line at the bottom naming where the pictures came from, and anything that needs you (a missing key, a failed painting).",
+      "help": "The small line at the foot of the page: where the pictures came from, and anything that needs you (a missing key, a failed painting). Credits only keeps the attributions and drops the status.",
       "choices": [
         {
           "value": "show",
-          "label": "Show"
+          "label": "Credits and status"
+        },
+        {
+          "value": "credits",
+          "label": "Credits only"
         },
         {
           "value": "hide",
-          "label": "Hide"
+          "label": "Nothing"
         }
       ]
     },

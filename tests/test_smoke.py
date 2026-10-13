@@ -1050,7 +1050,7 @@ def test_cluster_text_modes_and_footer_reach_the_client(tmp_path, offline):
             ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480},
         )
     assert r["cluster_text"] == "under" and r["text_scale"] == 1.5
-    assert r["footer"] is False
+    assert r["footer"] == "hide"
     assert r["cluster"]["lines"] == ["name", "count"]
     assert r["cluster"]["label"] >= server.SHEET_LABEL
     # anything else is the defaults: everything shown, the look's own size
@@ -1060,7 +1060,7 @@ def test_cluster_text_modes_and_footer_reach_the_client(tmp_path, offline):
             {},
             ctx={"data_dir": str(tmp_path)},
         )
-    assert r["cluster_text"] == "key" and r["text_scale"] == 1 and r["footer"]
+    assert r["cluster_text"] == "key" and r["text_scale"] == 1 and r["footer"] == "show"
 
 
 def test_blend_remembers_where_each_bird_sat(tmp_path, offline):

@@ -1131,6 +1131,8 @@ CLUSTER_STYLES = ("sheet", "numbered", "wreath", "notebook", "drawer", "blend")
 # How much text the cluster page carries: everything, the labels under each
 # bird alone, or none.
 CLUSTER_TEXTS = ("key", "under", "none")
+# The line at the foot of a page: status and credits, credits alone, or nothing.
+FOOTERS = ("show", "credits", "hide")
 # Type size on the cluster page, per cent of the look's own.
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 # Where the birds go on a printed cluster page; "auto" is the look's own.
@@ -3165,7 +3167,7 @@ def _fetch(
     cluster_arrange = _choice(options.get("cluster_arrange"), ARRANGEMENTS)
     cluster_text = _choice(options.get("cluster_text"), CLUSTER_TEXTS)
     text_scale = int(_choice(options.get("cluster_text_scale"), TEXT_SCALES)) / 100
-    footer = options.get("footer") != "hide"
+    footer = _choice(options.get("footer"), FOOTERS)
     cluster_sizing = _choice(options.get("cluster_sizing"), SIZINGS)
     cluster_scene = _choice(options.get("cluster_scene"), tuple(SCENES))
     cluster_fidelity = _choice(options.get("cluster_fidelity"), tuple(FIDELITY))
