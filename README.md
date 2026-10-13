@@ -65,7 +65,14 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 
 The cluster shows the day's busiest birds on one page, in one of two **Cluster styles**. Both need an AI picture option; until a bird is painted, and with AI painting off, the cluster is a numbered montage of the birds' own plates and photos.
 
-**Specimen sheet** (the default) is a page from a field guide: each bird's own AI painting is cut out and printed on one sheet, packed into an oval with the biggest bird in the middle, roughly true to size against each other (from a bundled table of body lengths for common garden birds), each named underneath. It shows up to 24 birds (**Birds in the cluster**), costs nothing beyond the birds' own paintings, and fills in as they are painted, one per refresh. Building a sheet takes a few seconds, so it happens in the background and the previous sheet shows meanwhile.
+**Specimen sheet** (the default) is a page from a field guide: each bird's own AI painting is cut out and printed on one sheet, packed into an oval with the biggest bird in the middle, roughly true to size against each other (from a bundled table of body lengths for common garden birds), each named underneath. It shows up to 24 birds (**Cluster: how many birds**), costs nothing beyond the birds' own paintings, and fills in as they are painted, one per refresh. Building a page takes a few seconds, so it happens in the background and the previous page shows meanwhile.
+
+Four more looks print the same paintings differently:
+
+- **Numbered plate**: the birds numbered on the plate, with a key of names and today's counts beside it (below it in a tall cell).
+- **Wreath**: the birds in a ring round a centred title and the date.
+- **Field notebook**: the birds taped onto ruled paper at a slight tilt, with handwritten names.
+- **Specimen drawer**: each bird in its own compartment on felt, in a wooden frame, with a museum tag.
 
 **Blended scene** shows up to six birds as one picture: once all of them are painted they are arranged in an oval and one more fal.ai pass repaints them together, with one branch, one background and one light. The blend is kept and made again when the busiest birds change, at most as often as **Re-blend the cluster** allows (hourly to daily, three hours by default), at about US$0.04 a blend.
 

@@ -333,18 +333,45 @@ function bleed(d, showSci, tone, caption) {
    it is the birds' own paintings blended into one scene (or, until that is
    ready, cut out and laid on one sheet); otherwise a numbered montage of
    their plates and photos, numbered to match the key. */
+/* The cluster as one printed page, in one of five looks (C.mode): a
+   specimen sheet, a numbered plate with a key, a wreath round a title, a
+   field notebook, or a specimen drawer. The server has laid the page out
+   and says where each label goes (b.at, as fractions of the page). */
 function sheet(d, C) {
-  const labels = (C.birds || []).map((b) => {
-    const [x, y, w, h] = b.box;
-    return `<span class="sh-l" style="left:${((x + w / 2) * 100).toFixed(2)}%;top:${((y + h) * 100).toFixed(2)}%">${esc(b.name)}</span>`;
+  const mode = C.mode || 'sheet';
+  const birds = C.birds || [];
+  const labels = birds.map((b, i) => {
+    const [x, y] = b.at || [b.box[0] + b.box[2] / 2, b.box[1] + b.box[3]];
+    const text = mode === 'numbered' ? String(i + 1) : esc(b.name);
+    const rot = mode === 'notebook' && b.rot ? `;transform:translate(-50%, 15%) rotate(${-b.rot}deg)` : '';
+    return `<span class="sh-l" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%${rot}">${text}</span>`;
   }).join('');
   const waiting = (C.waiting || []).length;
-  return `
-    <div class="sh" style="background:${esc(C.pic.paper)}">
-      <div class="cl-sheet sh-s" style="--r:${C.ratio};--lf:${C.label}"><img src="${C.pic.src}" alt="">${labels}
-        <div class="sh-c">${esc(d.label)} · heard to-day · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to paint` : ''}</div>
+  const line = `${esc(d.label)} · heard to-day · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to paint` : ''}`;
+  let extra = `<div class="sh-c">${line}</div>`;
+  if (mode === 'wreath') {
+    extra = `<div class="sh-w"><div class="sh-wk">${esc(d.label)}</div><div class="sh-wt">Heard to-day</div>
+      <div class="sh-wd">${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to paint` : ''}</div></div>`;
+  } else if (mode === 'notebook') {
+    extra = `<div class="sh-nb">${esc(d.label)}, ${esc(d.date)} &mdash; ${d.species_today} species heard${waiting ? `, ${waiting} still to draw` : ''}</div>`;
+  } else if (mode === 'drawer') {
+    extra = `<div class="sh-plaque">${esc(d.label)} · ${esc(d.date)}</div>`;
+  }
+  const page = `<div class="cl-sheet sh-s sh-${mode}" style="--r:${C.ratio};--lf:${C.label}"><img src="${C.pic.src}" alt="">${labels}${mode === 'numbered' ? '' : extra}</div>`;
+  if (mode === 'numbered') {
+    const rows = birds.map((b, i) => `<li><em>${i + 1}.</em><span>${esc(b.name)}</span><b>${b.count}</b></li>`).join('');
+    return `
+    <div class="cl cl-numbered" style="background:${esc(C.pic.paper)}">
+      <div class="cl-pic">${page}</div>
+      <div class="cl-key">
+        <div class="cl-k">${esc(d.label)} · ${esc(d.date)}</div>
+        <div class="cl-t">Heard to-day</div>
+        <ol class="fitrows">${rows}</ol>
+        <div class="cl-f">${d.species_today} species · ${d.detections_today} calls to-day${waiting ? ` · ${waiting} still to paint` : ''}</div>
       </div>
     </div>${foot(d)}`;
+  }
+  return `<div class="sh" style="background:${mode === 'drawer' ? '#3a2c20' : esc(C.pic.paper)}">${page}</div>${foot(d)}`;
 }
 
 function cluster(d, showSci, tone) {
@@ -750,6 +777,8 @@ export default function render(shadow, ctx) {
       .cl-mont figcaption { position: absolute; left: 1cqmin; top: .6cqmin; font-family: 'IM Fell English', Georgia, serif; font-size: 3.4cqmin; line-height: 1; background: #fffdf6; padding: .2cqmin .8cqmin; }
       .cl-key { flex: 0 0 34%; min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: center; font-family: 'IM Fell English', Georgia, serif; }
       .cl-key ol.fitrows { flex: 0 1 auto; max-height: 100%; }
+      /* the key's header lines never give up height to the list */
+      .cl-k, .cl-t, .cl-f { flex: 0 0 auto; }
       .cl-k { font-family: 'IM Fell English SC', Georgia, serif; font-size: 2.6cqmin; letter-spacing: .14em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .cl-t { font-family: 'IM Fell English SC', Georgia, serif; font-size: 6cqmin; letter-spacing: .04em; line-height: 1.05; margin-top: 1cqmin; padding-bottom: 1.6cqmin; border-bottom: 1px solid currentColor; box-shadow: 0 2px 0 #f3ead6, 0 3px 0 currentColor; }
       .cl ol { list-style: none; margin: 2cqmin 0 0; padding: 0; }
@@ -855,7 +884,31 @@ export default function render(shadow, ctx) {
       .sh-s { container-type: size; color: #2a2116; }
       .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; line-height: 1; }
       .sh-c { position: absolute; left: 0; right: 0; bottom: 1.6%; text-align: center; font-family: 'IM Fell English', Georgia, serif; font-style: italic; font-size: calc(var(--lf) * 100cqh); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sh-numbered .sh-l { font-family: 'IM Fell English', Georgia, serif; font-size: calc(var(--lf) * 170cqh); }
+      @container (max-aspect-ratio: 1) {
+        /* the plate keeps most of a tall cell; the key takes two columns */
+        .cl-numbered .cl-key { max-height: 38%; flex: 0 0 auto; justify-content: flex-start; }
+        .cl-numbered li { font-size: 2.8cqmin; padding: .4cqmin 0; }
+        .cl-numbered .cl-pic { overflow: hidden; }
+        .cl-numbered .cl-t { padding-bottom: 1cqmin; }
+        .cl-numbered ol.fitrows { margin-top: 1.2cqmin; }
+        .cl-numbered .cl-key ol.fitrows { flex: 1 1 auto; min-height: 0; column-gap: 4cqmin; }
+        .cl-numbered .cl-key ol.fitrows > li { width: calc(50% - 2cqmin); margin-right: 4cqmin; }
+        .cl-numbered .cl-t { font-size: 5cqmin; }
+      }
+      .sh-w { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 34%; text-align: center; font-family: 'IM Fell English', Georgia, serif; }
+      .sh-wk { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 110cqh); letter-spacing: .16em; }
+      .sh-wt { font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 300cqh); line-height: 1.05; margin: .4em 0 .2em; }
+      .sh-wd { font-style: italic; font-size: calc(var(--lf) * 110cqh); }
+      .sh-notebook { color: #23324a; }
+      .sh-notebook .sh-l { font-family: Caveat, cursive; font-size: calc(var(--lf) * 150cqh); letter-spacing: 0; }
+      .sh-nb { position: absolute; left: 12%; right: 3%; top: 2.2%; font-family: Caveat, cursive; font-size: calc(var(--lf) * 190cqh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .sh-drawer .sh-l { background: #fbf8ef; color: #1d1a16; padding: .25em .6em .2em; box-shadow: 0 0 0 1px #6d6457; transform: translate(-50%, 0); max-width: 30%; overflow: hidden; text-overflow: ellipsis; }
+      .sh-plaque { position: absolute; left: 50%; top: 0; height: 5%; transform: translateX(-50%); display: flex; align-items: center; padding: 0 1.2em; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        background: #c9a95f; color: #2a2116; box-shadow: inset 0 0 0 1px #8a6f33; font-family: 'IM Fell English SC', Georgia, serif; font-size: calc(var(--lf) * 110cqh); letter-spacing: .12em; }
       .lv-gray16 .sh, .lv-gray4 .sh, .lv-mono .sh { background: #fff !important; }
+      .lv-gray16 .sh-plaque, .lv-gray4 .sh-plaque, .lv-mono .sh-plaque { background: #fff; color: #000; box-shadow: inset 0 0 0 1px #000; }
+      .lv-gray16 .sh-notebook, .lv-gray4 .sh-notebook, .lv-mono .sh-notebook { color: #000; }
       .lv-gray16 .sh-s, .lv-gray4 .sh-s, .lv-mono .sh-s { color: #000; }
       .lv-mono .sh-l, .lv-mono .sh-c { -webkit-text-stroke: .35px currentColor; }
 

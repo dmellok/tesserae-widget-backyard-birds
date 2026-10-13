@@ -704,3 +704,28 @@ def test_photo_tone_light(tmp_path, offline):
             ctx={"data_dir": str(tmp_path)},
         )
     assert r["photo_tone"] == "light"
+
+
+@pytest.mark.parametrize("mode", ["sheet", "numbered", "wreath", "notebook", "drawer"])
+def test_cluster_looks_build_a_page(tmp_path, offline, mode):
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "pictures": "gen",
+        "cluster_style": mode,
+        "cluster_size": 3,
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    with _at(8):
+        for _ in range(4):
+            server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+        r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+    c = r["cluster"]
+    assert c["sheet"] and c["mode"] == mode and len(c["birds"]) == 3
+    for b in c["birds"]:
+        x, y = b["at"]
+        assert 0 <= x <= 1 and 0 <= y <= 1
+    if mode == "notebook":
+        assert "font-family:'Caveat'" in r["font_css"]
+    assert len(offline.bodies) == 3, "no blend for a printed page"
