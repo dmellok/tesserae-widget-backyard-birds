@@ -116,6 +116,10 @@ The caption styles bundle Playfair Display, Caveat, IM Fell English, Archivo Bla
 - Interface words ("just heard", "calls today") are English only; bird names follow BirdNET-Go.
 - The demo garden covers Australia, Europe and North America; elsewhere it falls back to North America.
 
+## Credit
+
+The cluster's specimen sheet, the day's birds cut from old natural-history plates and laid out together on one page with the larger birds in the middle, follows [Fugleramme](https://github.com/arnegiacomo/fugleramme) by Arne Giacomo: a BirdNET-Go bird frame for a Raspberry Pi and an e-ink panel, with nearly 1,200 hand-cut public-domain illustrations. If you want a dedicated frame rather than a Tesserae widget, go and look at it. This widget is a separate implementation for Tesserae and shares no code or artwork with it.
+
 ## Licence
 
 AGPL-3.0-or-later. Plates are public domain; photos and fonts keep their own licences, as credited.
