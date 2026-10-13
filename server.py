@@ -746,6 +746,13 @@ GEN_STYLES: dict[str, tuple[str, str]] = {
         "a bold linocut print in black ink with one muted colour: strong carved lines, "
         "simple shapes, a little texture from the block, plain off-white paper",
     ),
+    "grumpy": (
+        "Grumpy cartoon",
+        "a chunky, round cartoon of the bird as a cross little game character: thick "
+        "frowning eyebrows, a determined glare, bold flat colours and a heavy dark outline, "
+        "still recognisably the species from its colours, markings and bill, on plain "
+        "white paper",
+    ),
     "sketch": (
         "Field sketch",
         "a naturalist's field sketch in graphite with a light watercolour wash: loose "
