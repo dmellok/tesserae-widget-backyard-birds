@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, illustrated with classic plates by Audubon, Gould, Lear and others, or AI paintings in six styles. Seven layouts, from a field log to a cluster of the day's birds. Colour, greyscale and black-and-white panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -68,6 +68,11 @@
       "label": "BirdNET-Go API token",
       "default": "",
       "secret": true,
+      "show_if": {
+        "url": {
+          "not": ""
+        }
+      },
       "help": "Only if BirdNET-Go's Private Mode is on. Create one in BirdNET-Go under Settings, Security."
     },
     {
@@ -111,6 +116,9 @@
       "type": "select",
       "label": "Full bleed: caption style",
       "default": "band",
+      "show_if": {
+        "layout": "bleed"
+      },
       "help": "Only used by the full bleed layout. Folio, museum, figure and cyanotype are natural-history styles; stamp, woodblock, cameo and Art Nouveau frame the bird as a postage stamp, a Japanese print with a seal, an oval on a dark mat, and an arched poster. The serif and handwritten styles have fine strokes that suit colour and greyscale panels better than black and white ones.",
       "choices": [
         {
@@ -172,6 +180,11 @@
       "type": "select",
       "label": "Pictures",
       "default": "plate_photo",
+      "show_if": {
+        "layout": {
+          "not": "chart"
+        }
+      },
       "help": "Classic plates come from a reviewed pack of public-domain illustrations; birds without one get a photo toned to match. The AI options need a fal.ai key in the widget settings. In the cluster layout the AI options paint each bird and blend them into one picture; otherwise it shows their own pictures side by side.",
       "choices": [
         {
@@ -201,6 +214,12 @@
       "type": "select",
       "label": "Photo colour",
       "default": "toned",
+      "show_if": {
+        "pictures": [
+          "plate_photo",
+          "plate_gen"
+        ]
+      },
       "help": "With classic plates on, a photo standing in for a bird without a plate is toned sepia so the set matches. Lightly toned keeps most of the photo's colour with a warm cast; natural colour leaves photos as they are.",
       "choices": [
         {
@@ -222,6 +241,12 @@
       "type": "select",
       "label": "Art style (AI paintings)",
       "default": "gould",
+      "show_if": {
+        "pictures": [
+          "plate_gen",
+          "gen"
+        ]
+      },
       "help": "How AI paintings are painted. Each style keeps its own painting per bird, so switching back costs nothing. The engraving suits black and white panels.",
       "choices": [
         {
@@ -259,6 +284,13 @@
       "type": "select",
       "label": "Cluster: style",
       "default": "sheet",
+      "show_if": {
+        "layout": "cluster",
+        "pictures": [
+          "plate_gen",
+          "gen"
+        ]
+      },
       "help": "Only used by the cluster layout with an AI option. The first five print each bird's own painting on one page, at no cost beyond the paintings: a specimen sheet named underneath, a numbered plate with a key, a wreath round a title, a field notebook with taped-in birds, or a specimen drawer with museum tags. Blended scene repaints up to six birds together with one more AI pass.",
       "choices": [
         {
@@ -292,6 +324,9 @@
       "type": "select",
       "label": "Cluster: how many birds",
       "default": "8",
+      "show_if": {
+        "layout": "cluster"
+      },
       "help": "Only used by the cluster layout: how many of today's busiest birds it shows. A blended scene takes at most 6.",
       "choices": [
         {
@@ -345,6 +380,9 @@
       "type": "select",
       "label": "Cluster: re-blend at most (blended scene)",
       "default": "3",
+      "show_if": {
+        "cluster_style": "blend"
+      },
       "help": "Only used by the cluster layout with an AI option. Each bird is painted on its own and kept; the paintings are then blended into one picture by one more AI pass (about US$0.04). When today's busiest birds change, the picture is blended again at most this often.",
       "choices": [
         {
@@ -404,13 +442,24 @@
           "value": "count",
           "label": "Most calls first"
         }
-      ]
+      ],
+      "show_if": {
+        "layout": {
+          "not": "chart"
+        }
+      }
     },
     {
       "name": "chart_labels",
       "type": "select",
       "label": "Chart labels (day chart, field log)",
       "default": "none",
+      "show_if": {
+        "layout": [
+          "list",
+          "chart"
+        ]
+      },
       "help": "Numbers on the day chart's cells and the field log's activity strip.",
       "choices": [
         {
@@ -460,6 +509,11 @@
       "type": "select",
       "label": "Minimum confidence",
       "default": "70",
+      "show_if": {
+        "url": {
+          "not": ""
+        }
+      },
       "help": "Detections BirdNET is less sure of than this are left out.",
       "choices": [
         {
@@ -488,7 +542,12 @@
       "name": "show_sci",
       "type": "boolean",
       "label": "Show scientific names",
-      "default": true
+      "default": true,
+      "show_if": {
+        "layout": {
+          "not": "chart"
+        }
+      }
     },
     {
       "name": "location",
@@ -525,7 +584,12 @@
           "value": "60",
           "label": "Hourly"
         }
-      ]
+      ],
+      "show_if": {
+        "url": {
+          "not": ""
+        }
+      }
     }
   ],
   "data_schema": {
