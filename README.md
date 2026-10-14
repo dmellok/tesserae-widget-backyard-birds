@@ -26,6 +26,7 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 | Field log | The bird just heard, its plate to the edge of the page, with the rest of today's birds named beside it, their calls and when each was last heard, and a strip of the day's hours |
 | Latest visitor | The same page with the bird larger and the tally beside it: calls, certainty, species, then the others in brief |
 | Gallery | A card per bird, with a "new today" flag |
+| Atlas | Every bird ever heard here as a stamp on a sheet, the ones heard most days first, with first day and days heard, and the empty perforations of the stamps still to come |
 | Day chart | A ledger of who called in which hour, darker where busier, with optional counts in the cells |
 | Book plate | The latest bird as a page from a field guide, with an engraved-style caption |
 | Cluster | Today's busiest birds on one page: a specimen sheet of their AI paintings, a blended AI scene, or a numbered montage of their plates and photos |
@@ -35,6 +36,10 @@ The manifest declares `network:*` rather than a list of hosts, because the BirdN
 The last four full-bleed styles are natural-history pieces. **Folio plate** is a double-ruled page from a Victorian folio, numbered by which bird of the day this was, with an engraved caption. **Museum label** sets the plate beside a collection card in printed field names and handwritten entries. **Scientific figure** draws the bird's calls per hour round a 24-hour dial with a figure caption. **Cyanotype** prints the picture as its own negative, white on Prussian blue, under the Latin name.
 
 Four more frame the bird as an object. **Postage stamp** puts it on a perforated stamp, with the garden as its country and the day's calls as its value. **Woodblock print** gives it a tall title cartouche and a red seal, as on a Japanese kacho-e print. **Cameo** shows it in an oval window on a dark mat, like a Victorian cabinet card. **Art Nouveau** sets it under an arched frame with a title panel.
+
+**Period** shows to-day, BirdNET-Go's day as it fills, or this week, the last seven days together from BirdNET-Go's species summary (no hours, so the strips and chart go quiet).
+
+**Cluster: poses** paints every bird perched, or every other bird in flight so a page is not eight profiles on branches; each pose is its own painting. Once a painting lands, the widget asks fal.ai's BiRefNet model for the same picture with its paper removed and keeps it beside the painting, so the cluster page cuts on the bird's true outline rather than guessing where the paper ends.
 
 **Which bird** picks the bird the latest visitor, book plate and full bleed show: the one just heard, the rarest heard today (from the widget's own log of the days each bird was heard here), the one with most or fewest calls, or a new or returning species. **Draw the bird's song line** traces the bird's latest call under its name, from BirdNET-Go's sonogram of the detection; the **sonogram** caption shows the whole sonogram as a scientific strip. A bird heard again after six weeks or more away is marked *back* where new birds are marked *new*.
 

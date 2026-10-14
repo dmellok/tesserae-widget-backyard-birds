@@ -65,6 +65,18 @@ def _jpeg(w: int = 300, h: int = 400) -> bytes:
     return buf.getvalue()
 
 
+def _png_alpha() -> bytes:
+    """A cut-out as the model returns it: a bird-shaped blob on transparency."""
+    from PIL import ImageDraw
+
+    w, h = 300, 400
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(im).ellipse((80, 100, 220, 300), fill=(90, 60, 30, 255))
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
 @pytest.fixture
 def offline():
     """No network: plates, photos and fal all answer from here."""
@@ -77,7 +89,8 @@ def offline():
 
     def fake_http(url, token="", accept="application/json", **kw):  # noqa: ARG001
         calls.append(url)
-        if "fal.run" in url and kw.get("body"):
+        # the painting requests alone; the cut-out model's follow the paintings
+        if "nano-banana" in url and kw.get("body"):
             calls.bodies.append(kw["body"])
         if "inaturalist.org/v1/taxa?" in url:
             return json.dumps({"results": [{"id": 7}]}).encode(), None
@@ -90,10 +103,16 @@ def offline():
             return json.dumps(
                 {"results": [{"taxon_photos": [{"photo": photo}]}]}
             ).encode(), None
+        if "birefnet" in url:
+            return json.dumps(
+                {"image": {"url": "https://fal.example/cut.png"}}
+            ).encode(), None
         if "fal.run" in url:
             return json.dumps(
                 {"images": [{"url": "https://fal.example/out.jpg"}]}
             ).encode(), None
+        if accept == "image/*" and url.endswith(".png"):
+            return _png_alpha(), None
         if accept == "image/*":
             return _jpeg(), None
         return None, "unreachable"
@@ -305,7 +324,7 @@ def test_generated_once_per_species(tmp_path, offline):
     assert r["latest"]["pic"]["kind"] == "generated"
     assert "AI painting" in r["latest"]["pic"]["credit"]
     assert not r["notices"] and not r["status"]
-    assert sum("fal.run" in u for u in offline) == 1, "painted once, then kept"
+    assert sum("nano-banana" in u for u in offline) == 1, "painted once, then kept"
 
 
 def test_generated_failure_is_shown_and_not_retried(tmp_path, offline):
@@ -393,7 +412,7 @@ def test_generated_one_new_painting_per_fetch(tmp_path, offline):
             ctx={"data_dir": str(tmp_path)},
         )
         _settle()
-    assert sum("fal.run" in u for u in offline) == 1
+    assert sum("nano-banana" in u for u in offline) == 1
 
 
 def test_fonts_only_for_the_style_on_screen(tmp_path, offline):
@@ -802,7 +821,10 @@ def test_every_art_style_makes_a_key_and_a_prompt():
         assert server._SLUG_RE.fullmatch(key), key
         assert label and how
         prompt = server.GEN_ONE.format(
-            name="Eurasian Blackbird", sci="Turdus merula", style=how
+            name="Eurasian Blackbird",
+            sci="Turdus merula",
+            style=how,
+            pose=server.POSES["perched"],
         )
         assert "plain" in prompt and "Eurasian Blackbird" in prompt
 
@@ -1164,3 +1186,110 @@ def test_custom_prompt_paints_with_its_own_words(tmp_path, offline):
     with _at(8):
         r = server.fetch({**opts, "art_prompt": ""}, {"fal_api_key": "k"}, ctx=ctx)
     assert r["art_style"] == server._custom_tag(server.CUSTOM_EXAMPLE)
+
+
+def test_painting_comes_with_its_cut_out_and_the_sheet_uses_it(tmp_path, offline):
+    opts = {**MELBOURNE, "layout": "cluster", "pictures": "gen", "cluster_size": 2}
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    with _at(8):
+        for _ in range(3):
+            server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+    cuts = sorted(p.name for p in (tmp_path / "gen").glob("*.cut.png"))
+    assert len(cuts) == 2, "each painting was cut out by the model"
+    assert any("birefnet" in u for u in offline)
+    # the cut-out's alpha is the mask: the blob, not a guess at the paper
+    key = cuts[0][: -len(".cut.png")]
+    cut, mask, _paper = server._cutout_masked(
+        (tmp_path / "gen" / f"{key}.jpg").read_bytes(),
+        (tmp_path / "gen" / cuts[0]).read_bytes(),
+    )
+    assert (
+        0.3 < (sum(1 for v in mask.getdata() if v) / (mask.width * mask.height)) < 0.95
+    )
+
+
+def test_mixed_poses_paint_every_other_bird_in_flight(tmp_path, offline):
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "pictures": "gen",
+        "cluster_size": 2,
+        "cluster_poses": "mixed",
+    }
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    with _at(8):
+        for _ in range(3):
+            server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+    sent = [json.loads(b)["prompt"] for b in offline.bodies]
+    assert len(sent) == 2
+    assert sum("in flight with its wings spread" in p for p in sent) == 1
+    assert sum("perched on a simple branch" in p for p in sent) == 1
+    keys = sorted(p.stem for p in (tmp_path / "gen").glob("*.jpg"))
+    assert any(k.endswith("--flight") for k in keys)
+    g = server._gallery(tmp_path)
+    assert any(
+        e["pose"] == "flight" and "in flight" in e["style_label"] for e in g["birds"]
+    )
+    assert (
+        server._pkey("turdus_merula", "gould", "flight")
+        == "turdus_merula--gould--flight"
+    )
+    assert server._pkey("turdus_merula", "gould") == "turdus_merula"
+
+
+def test_the_week_window_covers_seven_days(tmp_path, offline):
+    with _at(9):
+        day = server.fetch(
+            {**MELBOURNE, "layout": "list"}, {}, ctx={"data_dir": str(tmp_path)}
+        )
+        week = server.fetch(
+            {**MELBOURNE, "layout": "list", "window": "week"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert day["period"] == "to-day" and week["period"] == "this week"
+    assert week["window"] == "week"
+    assert week["detections_today"] > day["detections_today"] * 3
+    # a live garden asks the summary endpoint for the seven days ending to-day
+    calls = []
+    with patch.object(
+        server,
+        "_json",
+        side_effect=lambda url, *a, **k: (calls.append(url), ([], None))[1],
+    ):
+        server._from_birdnet("https://b.example", "", 70, "week", "2026-10-13")
+    assert any(
+        "species/summary?start_date=2026-10-07&end_date=2026-10-13" in u for u in calls
+    )
+
+
+def test_the_atlas_lists_every_bird_ever_heard(tmp_path, offline):
+    with _at(9):
+        server.fetch(
+            {**MELBOURNE, "layout": "list"}, {}, ctx={"data_dir": str(tmp_path)}
+        )
+    # a bird heard a month ago, no longer in to-day's list
+    log = json.loads((tmp_path / "rarity.json").read_text())
+    log["days"].insert(0, "2026-09-10")
+    log["seen"]["Strix aluco"] = ["2026-09-10", "2026-09-12"]
+    log["names"]["Strix aluco"] = "Tawny Owl"
+    (tmp_path / "rarity.json").write_text(json.dumps(log))
+    with _at(9):
+        r = server.fetch(
+            {**MELBOURNE, "layout": "atlas", "pictures": "plate_photo"},
+            {},
+            ctx={"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480},
+        )
+    a = r["atlas"]
+    assert a["since"] == "2026-09-10" and a["days"] >= 2
+    owl = next(b for b in a["birds"] if b["name"] == "Tawny Owl")
+    assert (
+        owl["first"] == "2026-09-10"
+        and owl["days"] == 2
+        and owl["sci"] == "Strix aluco"
+    )
+    assert len(a["birds"]) == len(log["seen"])
+    assert all("pic" in b for b in a["birds"])
+    assert not any("fal.run" in u for u in offline), "the atlas never paints"

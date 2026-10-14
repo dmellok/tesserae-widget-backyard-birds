@@ -220,7 +220,7 @@ function dial(hourly, nowHour) {
 function head(d) {
   /* the printed header every everyday page shares: the garden and the day
      in small caps over a double rule */
-  return `<div class="ph"><span class="ph-k">${esc(d.label)} · heard to-day</span><b class="ph-d">${esc(d.date)}</b></div><div class="ph-rule"></div>`;
+  return `<div class="ph"><span class="ph-k">${esc(d.label)} · heard ${esc(d.period || 'to-day')}</span><b class="ph-d">${esc(d.date)}</b></div><div class="ph-rule"></div>`;
 }
 
 function strip(d) {
@@ -250,7 +250,7 @@ function foot(d) {
 function hero(d, L, tone, big) {
   const p = L.pic;
   const kick = `${esc(d.hero_kick || 'Just heard')} · ${esc(L.last)}`;
-  const sub = `${d.show_sci !== false && L.sci ? `${esc(L.sci)} · ` : ''}heard the ${ordinalWords(L.count) || `${L.count}`} time to-day`;
+  const sub = `${d.show_sci !== false && L.sci ? `${esc(L.sci)} · ` : ''}heard the ${ordinalWords(L.count) || `${L.count}`} time ${esc(d.period || 'to-day')}`;
   let picture;
   if (!p || !p.src) picture = `<div class="ev-nopic">${BIRD}</div>`;
   else {
@@ -332,6 +332,30 @@ function chart(d) {
         <div class="cells">${hours.map((h) => cell(s.hourly[h] || 0, h, rowMax)).join('')}</div><div class="cc">${s.count}</div></div>`; }).join('')}</div>
       <div class="crow axis"><div class="ci"></div><div class="cn"></div><div class="cells">${hours.map((h) => `<em>${h % 3 === 0 ? String(h).padStart(2, '0') : ''}</em>`).join('')}</div><div class="cc"></div></div>
     </div><div class="ev-foot bare"><span class="ev-tot">${d.species_today} species · ${d.detections_today} calls · calls per hour, darker is busier</span></div>${foot(d)}`;
+}
+
+/* The atlas: every bird ever heard here as a stamp on a sheet, the ones
+   heard most days first, with the empty perforations of the stamps still to
+   come. A life list that fills as visitors arrive. */
+function atlas(d, showSci, tone) {
+  const A = d.atlas || { birds: [], since: '', days: 0 };
+  const birds = A.birds || [];
+  const day = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || ''); if (!m) return esc(iso || ''); const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return `${Number(m[3])} ${months[Number(m[2]) - 1]}`; };
+  const stamps = birds.map((b) => `
+    <div class="at-s${d.species.some((s) => s.name === b.name) ? ' heard' : ''}">
+      ${d.pictures === 'none' ? `<div class="at-p nopic">${BIRD}</div>` : pic(b.pic, 'at-p', tone)}
+      <div class="at-n">${esc(b.name)}</div>
+      ${showSci && b.sci ? `<div class="at-sci">${esc(b.sci)}</div>` : ''}
+      <div class="at-m">first ${day(b.first)} · ${b.days} day${b.days === 1 ? '' : 's'}</div>
+    </div>`).join('');
+  /* a few empty perforations after the last stamp, for what is still to come */
+  /* the empty perforations after the last stamp: the rest of its row, six across or four in a tall cell */
+  const cols = (d.cell_portrait ? 4 : 6);
+  const empty = Array.from({ length: birds.length % cols ? cols - (birds.length % cols) : 0 }, () => '<div class="at-s at-empty"></div>').join('');
+  const kick = A.since ? `${birds.length} species since ${day(A.since)} · ${A.days} day${A.days === 1 ? '' : 's'} logged` : `${birds.length} species`;
+  return `
+    <div class="ph"><span class="ph-k">${esc(d.label)} · life list</span><b class="ph-d">${esc(kick)}</b></div><div class="ph-rule"></div>
+    <div class="at-grid">${stamps}${empty}</div>${foot(d)}`;
 }
 
 function plate(d, showSci, tone) {
@@ -604,6 +628,7 @@ export default function render(shadow, ctx) {
   else if (layout === 'plate') body = plate(d, showSci, tone);
   else if (layout === 'bleed') body = bleed(d, showSci, tone, d.caption || 'band');
   else if (layout === 'cluster') body = cluster(d, showSci, tone);
+  else if (layout === 'atlas') { d.cell_portrait = !!(shadow.host && shadow.host.clientHeight > shadow.host.clientWidth); body = atlas(d, showSci, tone); }
   else body = list(d, showSci, tone);
 
   installFonts(shadow, d.font_css);
@@ -750,6 +775,31 @@ export default function render(shadow, ctx) {
       .crow .cc { width: 8cqmin; text-align: right; font-size: 3.8cqmin; font-variant-numeric: tabular-nums; }
       .crow.axis { flex: 0 0 auto; height: 3.2cqmin; border-bottom: 0; }
       .axis em { flex: 1; font-style: normal; font-family: var(--bb-sc); font-size: 1.9cqmin; letter-spacing: .08em; }
+
+      /* atlas: stamps on a sheet, perforated edges, the empty ones still to come */
+      .lay-atlas { background: #f3ead6; color: #2a2116; font-family: var(--bb-serif); --paper: #f3ead6; --ink: #2a2116; }
+      .lay-atlas .ph { padding: 3cqmin 3.4cqmin .6cqmin; }
+      .lay-atlas .ph-rule { margin: 0 3.4cqmin .8cqmin; }
+      .lay-atlas .ph-d { font-size: 2.6cqmin; font-family: var(--bb-sc); letter-spacing: .1em; }
+      .at-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 1.6cqmin; padding: .6cqmin 3.4cqmin 1.4cqmin; overflow: hidden; }
+      .at-s { background: #fffdf6; padding: 1cqmin 1cqmin .8cqmin; text-align: center; display: flex; flex-direction: column; min-height: 0; min-width: 0; position: relative;
+        box-shadow: 0 0 0 1px #c9b98f; border: .6cqmin dotted #f3ead6; outline: 1px solid #c9b98f; outline-offset: -.6cqmin; }
+      .at-s.heard { background: #fff; }
+      .at-s.at-empty { background: transparent; box-shadow: none; }
+      /* the picture fills what the text leaves and never sets the stamp's height */
+      .at-p { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+      .at-p img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .at-p.fit img { object-fit: contain; }
+      .at-p.fit { padding: .3cqmin; }
+      .at-p.fit img { mix-blend-mode: multiply; }
+      .at-p.nopic { padding: 18%; }
+      .at-n { font-family: var(--bb-sc); font-size: 2.1cqmin; letter-spacing: .03em; margin-top: .5cqmin; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .at-sci { font-style: italic; font-size: 1.6cqmin; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .at-m { font-size: 1.6cqmin; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      @container (max-aspect-ratio: 1) { .at-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } .at-n { font-size: 2.3cqmin; white-space: normal; line-height: 1.1; max-height: 2.3em; } .at-sci, .at-m { font-size: 1.9cqmin; } }
+      @container (max-height: 320px) { .at-sci { display: none; } }
+      .lv-gray16 .lay-atlas, .lv-gray4 .lay-atlas, .lv-mono .lay-atlas { background: #fff; color: #000; --paper: #fff; --ink: #000; }
+      .lv-gray16 .at-s, .lv-gray4 .at-s, .lv-mono .at-s { box-shadow: 0 0 0 1px #000; outline-color: #000; border-color: #fff; }
 
       /* greyscale and mono panels: white paper, black ink */
       .lv-gray16 .lay-list, .lv-gray4 .lay-list, .lv-mono .lay-list, .lv-gray16 .lay-latest, .lv-gray4 .lay-latest, .lv-mono .lay-latest,

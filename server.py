@@ -71,6 +71,8 @@ IMG_MAX_BYTES = 12_000_000
 INAT_TAXA = "https://api.inaturalist.org/v1/taxa"
 COMMONS_FILE = "https://commons.wikimedia.org/wiki/Special:FilePath/"
 FAL_EDIT = "https://fal.run/fal-ai/nano-banana/edit"
+# The background-removal model that cuts a bird from its paper once painted.
+FAL_CUTOUT = "https://fal.run/fal-ai/birefnet/v2"
 GEN_DAILY_CAP = 12
 # The daily limit in force: the widget setting, carried as a context variable
 # so the painting threads (which copy the context) and the admin page see the
@@ -99,7 +101,17 @@ NOTE_PAINTING = "Painting {name} with fal.ai; it appears on a later refresh."
 NOTE_GEN_FAILED = "AI painting of {name} failed: {why}"
 NOTE_GEN_CAP = "AI paintings: today's limit of {cap} is used up."
 
-LAYOUTS = ("list", "latest", "gallery", "chart", "plate", "bleed", "cluster", "chorus")
+LAYOUTS = (
+    "list",
+    "latest",
+    "gallery",
+    "chart",
+    "plate",
+    "bleed",
+    "cluster",
+    "chorus",
+    "atlas",
+)
 CAPTIONS = (
     "band",
     "editorial",
@@ -134,6 +146,7 @@ SIZE = {
     "bleed": 1600,
     "cluster": 1600,
     "chorus": 320,
+    "atlas": 240,
 }
 
 # Fonts each caption style needs, inlined only when that style is on screen.
@@ -198,6 +211,8 @@ def _rarity(
     log = log if isinstance(log, dict) else {}
     days = log.get("days") if isinstance(log.get("days"), list) else []
     seen = log.get("seen") if isinstance(log.get("seen"), dict) else {}
+    # the names go with the log too, so the atlas can name a bird not heard to-day
+    names = log.get("names") if isinstance(log.get("names"), dict) else {}
     changed = False
     if today not in days:
         days.append(today)
@@ -208,11 +223,14 @@ def _rarity(
         if today not in hits:
             hits.append(today)
             changed = True
+        if names.get(key) != s["name"]:
+            names[key] = s["name"]
+            changed = True
     days = sorted(days)[-400:]
     window = days[-30:]
     if changed:
         seen = {k: sorted(v)[-400:] for k, v in seen.items()}
-        _write(path, json.dumps({"days": days, "seen": seen}).encode())
+        _write(path, json.dumps({"days": days, "seen": seen, "names": names}).encode())
     out: dict[str, tuple[str, float, str]] = {}
     for s in species:
         key = s.get("sci") or s["name"]
@@ -360,11 +378,22 @@ def _base_url(raw: str) -> str:
 
 
 def _from_birdnet(
-    base: str, token: str, min_conf: int
+    base: str, token: str, min_conf: int, window: str = "today", today: str = ""
 ) -> tuple[dict[str, Any] | None, str | None]:
-    daily, err = _json(
-        f"{base}/api/v2/analytics/species/daily?min_confidence={min_conf}", token
-    )
+    """BirdNET-Go's species for the day, or for the last seven days from its
+    species summary (which has no hours, so the strips go quiet)."""
+    if window == "week" and today:
+        start = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=6)).strftime(
+            "%Y-%m-%d"
+        )
+        daily, err = _json(
+            f"{base}/api/v2/analytics/species/summary?start_date={start}&end_date={today}&min_confidence={min_conf}",
+            token,
+        )
+    else:
+        daily, err = _json(
+            f"{base}/api/v2/analytics/species/daily?min_confidence={min_conf}", token
+        )
     if err == "auth":
         return None, ERR_AUTH
     if err == "unreachable":
@@ -391,7 +420,7 @@ def _from_birdnet(
                 if isinstance(hourly, list)
                 else [],
                 "first": _hhmm(s.get("first_heard")),
-                "last": _hhmm(s.get("latest_heard")),
+                "last": _hhmm(s.get("latest_heard") or s.get("last_heard")),
                 "conf": round(float(s.get("max_confidence") or 0), 2),
                 "new": bool(s.get("is_new_species")),
                 "thumb": str(s.get("thumbnail_url") or ""),
@@ -1119,10 +1148,19 @@ GEN_BLEND = (
 )
 GEN_ONE = (
     "Paint the bird in the reference photo, the {name} ({sci}), as {style}. Keep the "
-    "plumage, markings, bill and proportions exactly as in the photo, perched on a simple "
-    "branch, the whole bird and its perch alone on plain, empty paper with a clear margin "
-    "all round. No other birds, no scenery, no text, no lettering, no border, no signature."
+    "plumage, markings, bill and proportions exactly as in the photo, {pose} alone on "
+    "plain, empty paper with a clear margin all round. No other birds, no scenery, no "
+    "text, no lettering, no border, no signature."
 )
+# The two poses a bird is painted in; a cluster can mix them so a page is not
+# eight profiles on branches. Perched is the key every painting had before.
+POSES = {
+    "perched": "perched on a simple branch, the whole bird and its perch",
+    "flight": "in flight with its wings spread, seen from the side a little below, the whole bird",
+}
+CLUSTER_POSES = ("perched", "mixed")
+# What the page covers: to-day, or the last seven days (no hours in that case).
+WINDOWS = ("today", "week")
 # Most birds the blended cluster shows (the specimen sheet takes more).
 CLUSTER_MAX = 6
 # The cluster as a specimen sheet (each bird printed as painted) or blended
@@ -1206,6 +1244,8 @@ _LABEL_ROOM = {
 SHEET_LAYOUT = "sheet7"
 # Most birds a specimen sheet shows.
 SHEET_MAX = 24
+# Most stamps the atlas shows.
+ATLAS_MAX = 48
 # Label type size as a fraction of the sheet's height.
 SHEET_LABEL = 0.017
 
@@ -1220,10 +1260,12 @@ _FINISHED: list[tuple[str, float]] = []
 _PAINTING_LOCK = threading.Lock()
 
 
-def _pkey(slug: str, style: str) -> str:
-    """File key for a bird's painting in a style. The Gould style keeps the
-    bare slug, so paintings made before styles existed are still found."""
-    return slug if style == "gould" else f"{slug}--{style}"
+def _pkey(slug: str, style: str, pose: str = "perched") -> str:
+    """File key for a bird's painting in a style and pose. The Gould style
+    keeps the bare slug and perched keeps the bare key, so paintings made
+    before styles and poses existed are still found."""
+    base = slug if style == "gould" else f"{slug}--{style}"
+    return base if pose == "perched" else f"{slug}--{style}--{pose}"
 
 
 def _blend_key(style: str, scene: str = "auto", fidelity: str = "exact") -> str:
@@ -1325,7 +1367,12 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         )
         if not image_url:
             return fail("no openly licensed reference photo on iNaturalist")
-        prompt = GEN_ONE.format(name=job["name"], sci=job["sci"], style=how)
+        prompt = GEN_ONE.format(
+            name=job["name"],
+            sci=job["sci"],
+            style=how,
+            pose=POSES.get(str(job.get("pose") or "perched"), POSES["perched"]),
+        )
     _spend_budget(folder)
     body = json.dumps(
         {
@@ -1372,6 +1419,8 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     }
     if _CUSTOM_RE.fullmatch(str(job.get("style") or "")):
         meta["how"] = how  # a custom prompt's words travel with the painting
+    if job.get("pose") and job.get("pose") != "perched":
+        meta["pose"] = job["pose"]
     if job.get("collage"):
         meta["birds"] = job.get("birds") or []
         meta["tag"] = job.get("tag", "")
@@ -1382,7 +1431,37 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     _drop_derived(folder, key)
     with contextlib.suppress(OSError):
         err_path.unlink()
+    if not job.get("collage"):
+        # the cut-out: the painting with its paper removed, from the model's own
+        # copy of the picture; best effort, the sheet cuts it out itself without
+        cut = _cut_out(out_url, fal_key)
+        if cut:
+            _write(folder / f"{key}.cut.png", cut)
     return None
+
+
+def _cut_out(image_url: str, fal_key: str) -> bytes | None:
+    """The painting at ``image_url`` with its paper removed, as PNG bytes with
+    alpha, from the BiRefNet model on fal.ai; None when it declined."""
+    body = json.dumps(
+        {
+            "image_url": image_url,
+            "model": "General Use (Light)",
+            "operating_resolution": "1024x1024",
+            "output_format": "png",
+            "refine_foreground": True,
+        }
+    ).encode()
+    answer, err = _json(
+        FAL_CUTOUT, fal_key, auth_scheme="Key", body=body, timeout=GEN_TIMEOUT_S
+    )
+    if err or not isinstance(answer, dict):
+        return None
+    url = str((answer.get("image") or {}).get("url") or "")
+    if not url:
+        return None
+    raw, _err = _http(url, accept="image/*", timeout=60)
+    return raw if raw and raw[:2] == b"\x89P" else None
 
 
 def _archive(folder: Path, key: str) -> None:
@@ -1392,6 +1471,8 @@ def _archive(folder: Path, key: str) -> None:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     with contextlib.suppress(OSError):
         os.replace(folder / f"{key}.jpg", arch / f"{key}__{stamp}.jpg")
+    with contextlib.suppress(OSError):
+        os.replace(folder / f"{key}.cut.png", arch / f"{key}__{stamp}.cut.png")
     with contextlib.suppress(OSError):
         os.replace(folder / f"{key}.json", arch / f"{key}__{stamp}.json")
     _drop_derived(folder, key)
@@ -1533,13 +1614,14 @@ def _generated(
     allow_new: bool,
     levels: str = "colour",
     style: str = "gould",
+    pose: str = "perched",
 ) -> tuple[dict[str, Any] | None, bool, str | None]:
     """(picture, started_one, notice). Reads a kept painting, or starts one in
     the background when allowed: one new painting per fetch at most, and
     the daily limit, so a busy morning fills in over a few refreshes. A
     bird whose painting failed is left alone for GEN_RETRY_S and the failure
     is shown as a notice."""
-    key = _pkey(_slug(row["sci"] or row["name"]), style)
+    key = _pkey(_slug(row["sci"] or row["name"]), style, pose)
     pic = _painting(key, size, data_dir, levels)
     if pic is not None:
         return pic, False, None
@@ -1547,6 +1629,8 @@ def _generated(
     if not go:
         return None, False, note
     job = {"key": key, "style": style, "name": row["name"], "sci": row["sci"]}
+    if pose != "perched":
+        job["pose"] = pose
     started = _start_painting(job, data_dir, fal_key)
     return None, started, NOTE_PAINTING.format(name=f"the {row['name']}")
 
@@ -1810,6 +1894,7 @@ def _specimen_sheet(
     lines: tuple[str, ...] = ("name",),
     arrange: str = "auto",
     sizing: str = "true",
+    poses: str = "perched",
 ) -> tuple[dict[str, Any] | None, list[str]]:
     """The cluster as a printed page: today's busiest birds cut out and laid
     out together. With an AI picture option each bird is its own AI
@@ -1825,9 +1910,11 @@ def _specimen_sheet(
     if ai and not fal_key:
         notices.append(NOTE_NO_KEY)
     started = False
-    for b in birds:
+    for i, b in enumerate(birds):
         slug = _slug(b["sci"] or b["name"])
-        painting = _pkey(slug, style)
+        # mixed: every other bird in flight, so the page is not all profiles on branches
+        pose = "flight" if poses == "mixed" and i % 2 == 1 else "perched"
+        painting = _pkey(slug, style, pose)
         b["key"] = None
         if ai:
             pic, did, note = _generated(
@@ -1838,6 +1925,7 @@ def _specimen_sheet(
                 allow_new=not started,
                 levels=levels,
                 style=style,
+                pose=pose,
             )
             started = started or did
             if note and note not in notices:
@@ -1888,9 +1976,12 @@ def _specimen_sheet(
         for b in ready:
             b["factor"] = round(1.75 - 1.0 * float(b.get("rarity_share") or 0), 2)
     elif sizing == "busy":
+        # the busiest biggest on a gentle curve: area to the power 0.65 of
+        # the count as a share of the top bird's, so the top three do not
+        # all land on the same size
         top = max(b["count"] for b in ready) or 1
         for b in ready:
-            b["factor"] = round(0.7 + 1.0 * (b["count"] / top) ** 0.5, 2)
+            b["factor"] = round(0.65 + (b["count"] / top) ** 0.325, 2)
     elif sizing == "same":
         for b in ready:
             b["factor"] = 1.0
@@ -2175,12 +2266,15 @@ def _bird_mask(im: Any, paper: tuple[int, int, int]) -> Any:
     )
 
 
-def _cutout_masked(raw: bytes) -> tuple[Any, Any, tuple[int, int, int]] | None:
+def _cutout_masked(
+    raw: bytes, cut_png: bytes | None = None
+) -> tuple[Any, Any, tuple[int, int, int]] | None:
     """(the bird cropped from its painting with the paper turned white and
     everything outside its outline whitened too, its mask, the paper
     colour). Whitening outside a soft mask drops any wash or vignette the
     painter left round the bird, so only the bird and its perch are printed
-    on the sheet."""
+    on the sheet. With ``cut_png``, the painting as the cut-out model
+    returned it, its alpha is the mask and nothing is guessed."""
     try:
         from PIL import Image, ImageChops, ImageFilter, ImageStat
     except ImportError:  # pragma: no cover
@@ -2196,12 +2290,24 @@ def _cutout_masked(raw: bytes) -> tuple[Any, Any, tuple[int, int, int]] | None:
     edge.paste(im.crop((0, 0, w, b)), (0, 0))
     edge.paste(im.crop((0, h - b, w, h)), (0, b))
     paper = tuple(int(v) for v in ImageStat.Stat(edge).median)
-    try:
-        hard = _bird_mask(im, paper)
-    except ImportError:  # pragma: no cover - numpy ships with Tesserae
-        diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert("L")
-        hard = diff.point(lambda v: 255 if v > 30 else 0)
-        hard = hard.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(5))
+    hard = None
+    if cut_png:
+        with contextlib.suppress(Exception):
+            alpha = Image.open(io.BytesIO(cut_png)).convert("RGBA").getchannel("A")
+            hard = alpha.resize((w, h), Image.Resampling.BILINEAR).point(
+                lambda v: 255 if v > 127 else 0
+            )
+    if hard is None:
+        try:
+            hard = _bird_mask(im, paper)
+        except ImportError:  # pragma: no cover - numpy ships with Tesserae
+            diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert(
+                "L"
+            )
+            hard = diff.point(lambda v: 255 if v > 30 else 0)
+            hard = hard.filter(ImageFilter.MaxFilter(7)).filter(
+                ImageFilter.MinFilter(5)
+            )
     # the crop box ignores specks: measure it on a slightly eroded mask
     box = hard.filter(ImageFilter.MinFilter(7)).getbbox() or hard.getbbox()
     if not box:
@@ -2484,7 +2590,10 @@ def _build_sheet(
     birds = []
     for r, k in zip(rows, keys, strict=True):
         with contextlib.suppress(OSError):
-            got = _cutout_masked((folder / f"{k}.jpg").read_bytes())
+            cut_png = None
+            with contextlib.suppress(OSError):
+                cut_png = (folder / f"{k}.cut.png").read_bytes()
+            got = _cutout_masked((folder / f"{k}.jpg").read_bytes(), cut_png)
             if got:
                 cut, mask, paper = got
                 birds.append(
@@ -2715,6 +2824,32 @@ def _sheet(
 # ----------------------------------------------------------------------
 # The sky: sunrise, sunset and the moon, for night mode
 # ----------------------------------------------------------------------
+
+
+def _atlas(data_dir: Path, limit: int = ATLAS_MAX) -> dict[str, Any]:
+    """Every bird ever heard here, from the rarity log: name, first and last
+    day, days heard; the ones heard most days first. {birds, since, days}."""
+    log = _read_json(data_dir / "rarity.json", {})
+    log = log if isinstance(log, dict) else {}
+    days = sorted(log.get("days") or []) if isinstance(log.get("days"), list) else []
+    seen = log.get("seen") if isinstance(log.get("seen"), dict) else {}
+    names = log.get("names") if isinstance(log.get("names"), dict) else {}
+    birds = []
+    for key, hits in seen.items():
+        hits = sorted(h for h in hits if isinstance(h, str))
+        if not hits:
+            continue
+        birds.append(
+            {
+                "name": str(names.get(key) or key),
+                "sci": key if " " in key else "",
+                "first": hits[0],
+                "last": hits[-1],
+                "days": len(hits),
+            }
+        )
+    birds.sort(key=lambda b: (-b["days"], b["first"], b["name"]))
+    return {"birds": birds[:limit], "since": days[0] if days else "", "days": len(days)}
 
 
 def _sun_times(lat: float, lon: float, now: datetime) -> tuple[int, int] | None:
@@ -3166,6 +3301,8 @@ def _fetch(
     cluster_lines = tuple(v for v in LABEL_LINES if v in picked)
     cluster_arrange = _choice(options.get("cluster_arrange"), ARRANGEMENTS)
     cluster_text = _choice(options.get("cluster_text"), CLUSTER_TEXTS)
+    cluster_poses = _choice(options.get("cluster_poses"), CLUSTER_POSES)
+    window = _choice(options.get("window"), WINDOWS)
     text_scale = int(_choice(options.get("cluster_text_scale"), TEXT_SCALES)) / 100
     footer = _choice(options.get("footer"), FOOTERS)
     cluster_sizing = _choice(options.get("cluster_sizing"), SIZINGS)
@@ -3212,14 +3349,16 @@ def _fetch(
     if not base:
         raw = _demo(options, now)
     else:
-        slug = hashlib.sha1(f"{base}|{min_conf}".encode()).hexdigest()[:12]
+        slug = hashlib.sha1(f"{base}|{min_conf}|{window}".encode()).hexdigest()[:12]
         cache = data_dir / f"result_{slug}.json"
         raw = None
         if cache.exists() and time.time() - cache.stat().st_mtime < refresh_min * 60:
             with contextlib.suppress(OSError, json.JSONDecodeError):
                 raw = json.loads(cache.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
-            raw, err = _from_birdnet(base, token, min_conf)
+            raw, err = _from_birdnet(
+                base, token, min_conf, window, now.strftime("%Y-%m-%d")
+            )
             if err or raw is None:
                 return {
                     "error": err or ERR_UNREACHABLE.format(url=base),
@@ -3229,6 +3368,10 @@ def _fetch(
                 cache.write_text(json.dumps(raw), encoding="utf-8")
 
     species = [dict(s) for s in raw.get("species", [])]
+    if window == "week" and not base:
+        # the demo garden's week: a few days' worth of the day's calls
+        for s_ in species:
+            s_["count"] = s_["count"] * (4 + len(s_["name"]) % 3)
     rarity = _rarity(data_dir, species, now.strftime("%Y-%m-%d")) if species else {}
     for s_ in species:
         s_["rarity"], s_["rarity_share"], s_["returning"] = rarity.get(
@@ -3289,6 +3432,7 @@ def _fetch(
     # the rest named beside it), a thumbnail per card for the gallery.
     notices: list[str] = []
     cluster = None
+    atlas = None
     if layout in ("latest", "plate", "bleed", "list") and latest:
         notices = _attach_pictures(
             [latest],
@@ -3300,6 +3444,20 @@ def _fetch(
             data_dir,
             levels,
             art_style,
+        )
+    elif layout == "atlas":
+        atlas = _atlas(data_dir)
+        notices = _attach_pictures(
+            atlas["birds"],
+            pictures,
+            SIZE["atlas"],
+            base,
+            token,
+            fal_key,
+            data_dir,
+            levels,
+            art_style,
+            allow_new=False,
         )
     elif layout in ("gallery", "chorus"):
         notices = _attach_pictures(
@@ -3345,6 +3503,7 @@ def _fetch(
                 cluster_lines,
                 cluster_arrange,
                 cluster_sizing,
+                poses=cluster_poses,
             )
         if cluster is None:
             cluster, more = _cluster(
@@ -3428,6 +3587,9 @@ def _fetch(
         "now_hour": now.hour,
         "date": now.strftime("%a %d %b"),
         "date_iso": now.strftime("%Y-%m-%d"),
+        "window": window,
+        "period": "this week" if window == "week" else "to-day",
+        "atlas": atlas,
         "credits": credits,
         # what needs the owner (no key, a failure) is printed on the panel;
         # progress (a painting under way, the day's limit reached) is not,
@@ -3444,9 +3606,9 @@ def _fetch(
 # ----------------------------------------------------------------------
 
 _SLUG_RE = re.compile(
-    r"[a-z0-9_]{1,60}(--[a-z]{1,20})?"
-)  # slug, cluster_<scene>_<fidelity>, with --style
-_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z]{1,20})?)__(\d{8}-\d{6})")
+    r"[a-z0-9_]{1,60}(--[a-z]{1,20}){0,2}"
+)  # slug, cluster_<scene>_<fidelity>, with --style and --pose
+_ARCHIVED_RE = re.compile(r"([a-z0-9_]{1,60}(?:--[a-z]{1,20}){0,2})__(\d{8}-\d{6})")
 
 
 def _known_birds(data_dir: Path) -> list[tuple[str, str]]:
@@ -3475,8 +3637,10 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
     entries: dict[str, dict[str, Any]] = {}
 
     def entry(key: str) -> dict[str, Any]:
-        base, _, style = key.partition("--")
+        base, _, rest = key.partition("--")
+        style, _, pose = rest.partition("--")
         style = style if style in GEN_STYLES or _CUSTOM_RE.fullmatch(style) else "gould"
+        pose = pose if pose in POSES else "perched"
         scene = base.split("_")[1] if base.startswith("cluster_") else ""
         return entries.setdefault(
             key,
@@ -3489,7 +3653,9 @@ def _gallery(data_dir: Path) -> dict[str, Any]:
                 "birds": [],
                 "sci": "",
                 "style": style,
-                "style_label": _style(style)[0],
+                "style_label": _style(style)[0]
+                + (" · in flight" if pose == "flight" else ""),
+                "pose": pose,
                 "active": None,
                 "archive": [],
                 "error": None,
@@ -3596,6 +3762,8 @@ def _job_for(e: dict[str, Any]) -> dict[str, Any] | None:
     job = {"key": e["slug"], "style": e["style"], "name": e["name"], "sci": e["sci"]}
     if e.get("how"):
         job["how"] = e["how"]
+    if e.get("pose") and e["pose"] != "perched":
+        job["pose"] = e["pose"]
     return job
 
 
@@ -3774,6 +3942,7 @@ def blueprint() -> Any:
             folder / f"{slug}.jpg",
             folder / f"{slug}.json",
             folder / f"{slug}.err",
+            folder / f"{slug}.cut.png",
         ):
             with contextlib.suppress(OSError):
                 f.unlink()

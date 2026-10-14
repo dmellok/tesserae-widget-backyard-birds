@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 47 styles or your own prompt. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
   "icon": "ph-bird",
@@ -112,6 +112,37 @@
         {
           "value": "chorus",
           "label": "Dawn chorus: today's birds along a timeline, at the time each was first heard"
+        },
+        {
+          "value": "atlas",
+          "label": "Atlas: every bird ever heard here, as stamps on a sheet"
+        }
+      ]
+    },
+    {
+      "name": "window",
+      "type": "select",
+      "label": "Period",
+      "default": "today",
+      "help": "To-day is BirdNET-Go's day as it fills. This week is the last seven days together, from BirdNET-Go's species summary, which has no hours, so the hour strips and the chart go quiet.",
+      "show_if": {
+        "layout": [
+          "list",
+          "latest",
+          "gallery",
+          "cluster",
+          "plate",
+          "bleed"
+        ]
+      },
+      "choices": [
+        {
+          "value": "today",
+          "label": "To-day"
+        },
+        {
+          "value": "week",
+          "label": "This week"
         }
       ]
     },
@@ -830,6 +861,30 @@
           "not": "none"
         }
       }
+    },
+    {
+      "name": "cluster_poses",
+      "type": "select",
+      "label": "Cluster: poses (AI paintings)",
+      "default": "perched",
+      "help": "Perched paints every bird on a branch. Mixed paints every other bird in flight, so a page is not eight profiles on branches; each pose is its own painting, so mixed paints more the first time.",
+      "show_if": {
+        "layout": "cluster",
+        "pictures": [
+          "plate_gen",
+          "gen"
+        ]
+      },
+      "choices": [
+        {
+          "value": "perched",
+          "label": "All perched"
+        },
+        {
+          "value": "mixed",
+          "label": "Mixed: every other bird in flight"
+        }
+      ]
     },
     {
       "name": "cluster_scene",
