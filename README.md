@@ -1,5 +1,7 @@
 # Backyard Birds
 
+> **The collage page has moved.** The cluster / specimen-sheet page of this widget is superseded by [Specimen Sheet](https://github.com/dmellok/tesserae-widget-specimen-sheet), one widget for the page over BirdNET-Go, iNaturalist and GBIF, with model-made cut-outs, a balanced layout, eleven styles and a painted scene. Backyard Birds keeps its other layouts and stays installable.
+
 A [Tesserae](https://github.com/dmellok/tesserae) widget showing the birds [BirdNET-Go](https://github.com/tphakala/birdnet-go) has heard today, illustrated with classic natural history plates by Audubon, Gould, Lear and others.
 
 ![Full bleed, name band](screenshots/lg.png)
