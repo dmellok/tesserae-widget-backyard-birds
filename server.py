@@ -175,15 +175,17 @@ FONT_GROUPS = {
 # ----------------------------------------------------------------------
 
 
-def _tz(options: dict[str, Any]) -> tzinfo | None:
-    """IANA zone carried on the location option, or None for the server's."""
+def _tz(options: dict[str, Any]) -> tzinfo:
+    """IANA zone carried on the location option, or the server's own zone.
+    Never None: ``datetime.now(None)`` is naive, and the moon arithmetic
+    (an aware epoch) fails on it when a location carries no zone (#1)."""
     for value in (options.get("timezone"), options.get("location")):
         if isinstance(value, dict):
             value = value.get("timezone")
         if isinstance(value, str) and value.strip():
             with contextlib.suppress(ValueError, KeyError, OSError):
                 return ZoneInfo(value.strip())
-    return None
+    return datetime.now().astimezone().tzinfo or timezone.utc
 
 
 def _int(value: Any, default: int, lo: int, hi: int) -> int:
@@ -2892,6 +2894,8 @@ def _sun_times(lat: float, lon: float, now: datetime) -> tuple[int, int] | None:
 def _moon(now: datetime) -> tuple[float, str]:
     """(phase 0..1 from new moon, its name)."""
     epoch = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
+    if now.tzinfo is None:  # a naive clock is read as the server's
+        now = now.astimezone()
     phase = (((now - epoch).total_seconds() / 86400) / 29.530588853) % 1
     names = (
         "new moon",

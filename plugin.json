@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.14.0",
+  "version": "0.14.1",
   "kind": "widget",
   "description": "The birds BirdNET-Go has heard today, with classic plates by Audubon, Gould and Lear or AI paintings in 47 styles or your own prompt. Eight layouts, from a field log and a dawn chorus to a page of the day's birds. Colour, greyscale and mono panels. Demo garden until set up.",
   "icon": "ph-bird",

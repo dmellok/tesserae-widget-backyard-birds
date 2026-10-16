@@ -1293,3 +1293,15 @@ def test_the_atlas_lists_every_bird_ever_heard(tmp_path, offline):
     assert len(a["birds"]) == len(log["seen"])
     assert all("pic" in b for b in a["birds"])
     assert not any("fal.run" in u for u in offline), "the atlas never paints"
+
+
+def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
+    """A cell with coordinates but no timezone (#1): the clock falls back to
+    the server's zone instead of a naive time the moon arithmetic rejects."""
+    r = server.fetch(
+        {"latitude": -37.81, "longitude": 144.96, "pictures": "none"},
+        {},
+        ctx={"data_dir": str(tmp_path)},
+    )
+    assert r["sky"]["moon_name"]
+    assert server._moon(datetime(2026, 10, 11, 8, 14))[1]
