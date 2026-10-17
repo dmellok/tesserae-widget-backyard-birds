@@ -1305,3 +1305,18 @@ def test_a_place_without_a_zone_still_has_a_sky(tmp_path, offline):
     )
     assert r["sky"]["moon_name"]
     assert server._moon(datetime(2026, 10, 11, 8, 14))[1]
+
+
+def test_pending_paintings_are_counted_for_a_warm_ahead(tmp_path):
+    import server
+
+    r = server.fetch({}, {}, ctx={"data_dir": str(tmp_path), "preview": False})
+    assert r["live_pending"] == 0 and not r.get("live_refresh_s"), "the demo garden has nothing on the way"
+    with server._PAINTING_LOCK:
+        server._PAINTING.add("x")
+    try:
+        r = server.fetch({}, {}, ctx={"data_dir": str(tmp_path), "preview": False})
+        assert r["live_pending"] == 1 and r["live_refresh_s"] == 6
+    finally:
+        with server._PAINTING_LOCK:
+            server._PAINTING.discard("x")

@@ -3272,11 +3272,21 @@ def fetch(
     plates_token = _EXTRA_PLATES.set(_extra_plates(data_dir))
     custom_token = _CUSTOM.set(None)
     try:
-        return _fetch(options, settings, ctx=ctx)
+        data = _fetch(options, settings, ctx=ctx)
     finally:
         _CUSTOM.reset(custom_token)
         _EXTRA_PLATES.reset(plates_token)
         _CAP.reset(cap_token)
+    # Paintings on the way: the editors ask again in a few seconds, and a
+    # Tesserae warm-ahead (run before a scheduled send) learns its seconds
+    # per painting from the count.
+    with _PAINTING_LOCK:
+        pending = len(_PAINTING)
+    if isinstance(data, dict):
+        data["live_pending"] = pending
+        if pending and not data.get("live_refresh_s"):
+            data["live_refresh_s"] = 6
+    return data
 
 
 def _fetch(
