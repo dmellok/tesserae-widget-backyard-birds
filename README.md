@@ -4,7 +4,7 @@
 
 A [Tesserae](https://github.com/dmellok/tesserae) widget showing the birds [BirdNET-Go](https://github.com/tphakala/birdnet-go) has heard today, illustrated with classic natural history plates by Audubon, Gould, Lear and others.
 
-![Full bleed, name band](screenshots/lg.png)
+![Cluster, Spiral arrangement, AI paintings after Audubon](screenshots/lg.png)
 
 Until you point it at a BirdNET-Go server, it runs a **demo garden**: a believable day of birdsong for wherever the cell's (or the app's) location is, in Australia, Europe or North America, built from the clock so it fills in through the morning. You can try every layout without a microphone.
 
@@ -57,15 +57,13 @@ Every layout adapts to portrait cells. At full bleed, a plate is never cropped: 
 
 A Tesserae page is composed once and quantised for each panel afterwards, so the widget cannot tell what the panel can show; the **Panel** option says. **Colour** is the default. **16 greys** converts the pictures to greyscale with a gentle contrast stretch. **4 greys** stretches harder and snaps the day chart's heat scale to the panel's own four steps. **Black and white** lifts the mid-tones so a watercolour plate still reads once the panel dithers it, turns the heat scale into hatch patterns, frames the highlights instead of filling them, and thickens the fine serif and handwritten strokes.
 
-![Day chart in black and white, with counts](screenshots/extra-11.png)
-
 | | |
 | --- | --- |
 | ![Field log](screenshots/extra-1.png) | ![Latest visitor](screenshots/extra-2.png) |
-| ![Gallery](screenshots/extra-3.png) | ![Day chart](screenshots/extra-4.png) |
-| ![Book plate](screenshots/extra-5.png) | ![Editorial caption](screenshots/extra-6.png) |
-| ![Field notebook caption](screenshots/extra-7.png) | ![Specimen tag caption](screenshots/extra-8.png) |
-| ![Poster caption](screenshots/extra-9.png) | ![Portrait cells](screenshots/extra-10.png) |
+| ![Cluster, Voids arrangement, field notebook](screenshots/extra-3.png) | ![Book plate](screenshots/extra-4.png) |
+| ![Full bleed in portrait cells: woodblock print and Art Nouveau captions, AI paintings](screenshots/extra-5.png) | ![Full bleed captions: folio plate, museum label, postage stamp, cameo](screenshots/extra-6.png) |
+| ![Atlas](screenshots/extra-7.png) | ![Gallery](screenshots/extra-8.png) |
+| ![Dawn chorus above a day chart with counts](screenshots/extra-9.png) | |
 
 ## Pictures
 
