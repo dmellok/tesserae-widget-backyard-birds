@@ -809,6 +809,67 @@ def test_white_bird_is_cut_out_whole_and_a_wash_dropped():
     )
 
 
+def _perched_painting(paper, branch, sky=None):
+    """A bird on a branch on plain paper (or on a print's pale sky inside a
+    ruled frame), and the cut-out model's mask of the bird alone: the
+    branch, which runs in front of the bird's lower body, is cut away."""
+    from PIL import ImageDraw, ImageFilter
+
+    im = Image.new("RGB", (600, 800), paper)
+    d = ImageDraw.Draw(im)
+    if sky:
+        d.rectangle((40, 40, 560, 760), fill=sky, outline=(60, 50, 40), width=3)
+    d.ellipse((200, 200, 400, 520), fill=(120, 110, 100), outline=(50, 40, 30), width=3)
+    # the branch, light and thin at one end, across the bird and out both sides
+    d.line((70, 470, 300, 440), fill=branch, width=22)
+    d.line((300, 440, 520, 410), fill=branch, width=14)
+    d.line((520, 410, 545, 395), fill=(205, 190, 168), width=5)
+    buf = io.BytesIO()
+    im.filter(ImageFilter.GaussianBlur(0.8)).save(buf, "JPEG", quality=92)
+    model = Image.new("L", im.size, 0)
+    md = ImageDraw.Draw(model)
+    md.ellipse((200, 200, 400, 520), fill=255)
+    md.line((70, 470, 300, 440), fill=0, width=24)
+    md.line((300, 440, 520, 410), fill=0, width=16)
+    cut = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    cut.putalpha(model)
+    png = io.BytesIO()
+    cut.save(png, "PNG")
+    return buf.getvalue(), png.getvalue()
+
+
+@pytest.mark.parametrize("sky", [None, (196, 214, 222)])
+def test_the_branch_a_bird_perches_on_is_kept_with_the_model_mask(sky):
+    import numpy as np
+
+    paper = (243, 234, 214)
+    branch = (110, 80, 50)
+    raw, cut_png = _perched_painting(paper, branch, sky)
+    cut, mask, _paper = server._cutout_masked(raw, cut_png)
+    page = Image.open(io.BytesIO(raw)).convert("RGB")
+    whole = server._bird_mask(
+        page, paper, Image.open(io.BytesIO(cut_png)).getchannel("A")
+    )
+    assert whole.getbbox() is not None and mask.getbbox() is not None
+    # the crop's place on the page, from the same mask before and after it
+    ox = whole.getbbox()[0] - mask.getbbox()[0]
+    oy = whole.getbbox()[1] - mask.getbbox()[1]
+    m = np.asarray(mask) > 127
+    rgb = np.asarray(cut.convert("RGB")).astype(int)
+    # the branch inside the bird's outline, off both sides of it, and the
+    # light thin twig at its end: in the mask and printed, never whitened
+    # into a pale stub
+    for px, py in ((300, 440), (250, 447), (130, 462), (470, 417), (536, 401)):
+        x, y = px - ox, py - oy
+        assert 0 <= x < cut.width and 0 <= y < cut.height, (px, py, cut.size)
+        assert m[y, x], f"the branch at {(px, py)} is in the mask"
+        assert rgb[y, x].sum() < 3 * 232, f"the branch at {(px, py)} is printed"
+    if sky:
+        # the print's sky and its frame are not part of the perch
+        assert m.mean() < 0.5, m.mean()
+        assert cut.height < 520, cut.size
+
+
 def test_every_art_style_makes_a_key_and_a_prompt():
     manifest = json.loads((ROOT / "plugin.json").read_text())
     offered = next(o for o in manifest["cell_options"] if o["name"] == "art_style")
@@ -1372,7 +1433,6 @@ def _demo_sheet_birds(sizing: str = "true") -> list[dict]:
 @pytest.mark.parametrize("sizing", ["true", "busy", "same"])
 def test_fugleramme_arrangements_pack_without_overlap(arrange, size, sizing):
     import numpy as np
-    from PIL import ImageFilter
 
     W, H = size
     label = 0.017
@@ -1386,10 +1446,13 @@ def test_fugleramme_arrangements_pack_without_overlap(arrange, size, sizing):
     for b, (x, y, scale), (ax, ay) in zip(birds, spots, anchors, strict=True):
         assert scale > 0, f"{b['name']} was left off"
         m = b["mask"]
-        fit = m.resize((max(1, int(m.width * scale)), max(1, int(m.height * scale))))
-        hard = fit.point(lambda v: 255 if v > 127 else 0)
-        # the opaque pixels, less the 2 px halo Fugleramme lets birds nestle into
-        body = np.asarray(hard.filter(ImageFilter.MinFilter(5)), dtype=bool)
+        fit = m.resize(
+            (max(1, int(m.width * scale)), max(1, int(m.height * scale))),
+            Image.Resampling.BILINEAR,
+        )
+        # the whole cut-out, not eroded: no bird's outline may run into
+        # another's, so ink never meets ink
+        body = np.asarray(fit.point(lambda v: 255 if v > 127 else 0), dtype=bool)
         h, w = body.shape
         assert 0 <= x and 0 <= y and x + w <= W and y + h <= H, (
             "the bird is on the page"

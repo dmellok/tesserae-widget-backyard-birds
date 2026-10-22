@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "kind": "widget",
   "render": {
     "warm_ahead_s": 150

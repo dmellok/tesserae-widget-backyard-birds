@@ -1256,7 +1256,7 @@ _LABEL_ROOM = {
     "new": "new",
 }
 # Layout version of the specimen sheet, part of its cache tag.
-SHEET_LAYOUT = "sheet7"
+SHEET_LAYOUT = "sheet8"
 # Most birds a specimen sheet shows.
 SHEET_MAX = 24
 # Most stamps the atlas shows.
@@ -2208,7 +2208,24 @@ def _size_factor(sci: str, lengths: dict[str, float]) -> float:
     return max(0.55, min(2.0, (cm / 20.0) ** 0.75))
 
 
-def _bird_mask(im: Any, paper: tuple[int, int, int]) -> Any:
+def _grow(seed: Any, within: Any) -> Any:
+    """``seed`` spread through 4-connected ``within`` until it stops: the
+    parts of ``within`` that touch the seed (both bool arrays)."""
+    out = seed & within
+    for _ in range(4 * max(out.shape)):
+        grown = out.copy()
+        grown[1:, :] |= out[:-1, :]
+        grown[:-1, :] |= out[1:, :]
+        grown[:, 1:] |= out[:, :-1]
+        grown[:, :-1] |= out[:, 1:]
+        grown &= within
+        if (grown == out).all():
+            break
+        out = grown
+    return out
+
+
+def _bird_mask(im: Any, paper: tuple[int, int, int], seed: Any = None) -> Any:
     """The bird (and its perch) in a painting on plain paper, as an L mask.
 
     The paper is found by spreading in from the picture's edges over
@@ -2216,15 +2233,20 @@ def _bird_mask(im: Any, paper: tuple[int, int, int]) -> Any:
     grey, light wash such as a painted ground or shadow. What the spread
     cannot reach is the bird, so a white bird enclosed by its own outline
     stays whole even though its feathers are the paper's colour. Worked on a
-    small copy for speed, then scaled back up."""
+    small copy for speed, then scaled back up.
+
+    With ``seed`` (an L mask of the bird alone, from the cut-out model), what
+    is kept is the seed plus what is painted on the paper and touches it:
+    the branch the bird stands on, its leaves and flowers, which the model
+    cuts away (see ``_perch`` for what is left out), while a stray mark
+    elsewhere on the paper is still dropped."""
     import numpy as np
-    from PIL import Image, ImageFilter
+    from PIL import Image, ImageChops, ImageFilter
 
     w, h = im.size
     k = min(1.0, 320 / max(w, h))
-    small = im.resize(
-        (max(1, int(w * k)), max(1, int(h * k))), Image.Resampling.BILINEAR
-    )
+    sw, sh = max(1, int(w * k)), max(1, int(h * k))
+    small = im.resize((sw, sh), Image.Resampling.BILINEAR)
     a = np.asarray(small).astype(np.int16)
     diff = np.abs(a - np.array(paper, dtype=np.int16)).max(axis=2)
     lum = small.convert("L")
@@ -2243,23 +2265,9 @@ def _bird_mask(im: Any, paper: tuple[int, int, int]) -> Any:
     paperlike = diff < 24
     washlike = (texture < 24) & (sat < 26) & (L > paper_l - 95)
     cand = paperlike | washlike
-    bg = np.zeros_like(cand)
-    bg[0, :], bg[-1, :], bg[:, 0], bg[:, -1] = (
-        cand[0, :],
-        cand[-1, :],
-        cand[:, 0],
-        cand[:, -1],
-    )
-    for _ in range(4 * max(bg.shape)):
-        grown = bg.copy()
-        grown[1:, :] |= bg[:-1, :]
-        grown[:-1, :] |= bg[1:, :]
-        grown[:, 1:] |= bg[:, :-1]
-        grown[:, :-1] |= bg[:, 1:]
-        grown &= cand
-        if (grown == bg).all():
-            break
-        bg = grown
+    edges = np.zeros_like(cand)
+    edges[0, :], edges[-1, :], edges[:, 0], edges[:, -1] = True, True, True, True
+    bg = _grow(edges, cand)
     # a wash's own hard edge is texture, not paper: let the paper spread a
     # few more steps from the wash (never from plain paper, so a bird's pale
     # edge against plain paper is left alone) into pale grey pixels
@@ -2273,12 +2281,204 @@ def _bird_mask(im: Any, paper: tuple[int, int, int]) -> Any:
         grown[:, :-1] |= reach[:, 1:]
         reach = grown & (edge | bg)
     bg = bg | reach
-    obj = Image.fromarray(((~bg) * 255).astype(np.uint8))
-    # drop specks, close pinholes, back to full size
-    obj = obj.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.MaxFilter(5))
-    return obj.resize((w, h), Image.Resampling.BILINEAR).point(
+    fg = ~bg
+    if seed is not None:
+        bird = (
+            np.asarray(seed.convert("L").resize((sw, sh), Image.Resampling.BILINEAR))
+            > 127
+        )
+
+        # the perch is ink on its ground: the paper, or a print's painted
+        # sky. The ground round each pixel is the average of the smooth
+        # pixels near it, so the sky and the soft rim it leaves round a
+        # branch are not ink, while a pale twig on paper is
+        def near(weight: Any) -> tuple[Any, Any]:
+            """The mean colour of the weighted pixels round each pixel, and
+            how much weight there was."""
+            den = _box(weight, 12)
+            mean = (
+                np.stack([_box(a[..., c] * weight, 12) for c in range(3)], axis=2)
+                / np.maximum(den, 1e-6)[..., None]
+            )
+            return mean, den
+
+        smooth = (texture < 24) & ~bird
+        # the ground is the paper and any broad smooth field off it (a
+        # print's sky), not the flat paint of a branch or leaf
+        field = np.asarray(
+            Image.fromarray(((smooth & ~paperlike) * 255).astype(np.uint8))
+            .filter(ImageFilter.MinFilter(13))
+            .filter(ImageFilter.MaxFilter(13))
+        ).astype(bool)
+        ground, den = near((smooth & (paperlike | field)).astype(float))
+        ground[den < 0.05] = paper
+        ink = np.abs(a - ground).max(axis=2) > 22
+        # a sky next to the paper margin averages to neither: its own
+        # colour is not ink either
+        sky, den = near(field.astype(float))
+        skylike = (den >= 0.05) & (np.abs(a - sky).max(axis=2) <= 22)
+        fg = bird | _perch(
+            bird, fg & ink & ~skylike & ~bird, fg & ~paperlike & ~skylike
+        )
+    else:
+        # drop specks by size, not by eroding them: an erosion would also
+        # take a thin twig the bird is holding
+        labels, sizes = _pieces(fg)
+        fg = fg & (sizes >= max(6, fg.size // 2000))[labels]
+    obj = Image.fromarray((fg * 255).astype(np.uint8))
+    # close pinholes and keep a hairline of paper round the outline
+    obj = obj.filter(ImageFilter.MaxFilter(3))
+    obj = obj.resize((w, h), Image.Resampling.BILINEAR).point(
         lambda v: 255 if v > 127 else 0
     )
+    if seed is not None:
+        # the model's own outline wherever it reaches further
+        bird_full = seed.convert("L").resize((w, h), Image.Resampling.BILINEAR)
+        obj = ImageChops.lighter(obj, bird_full.point(lambda v: 255 if v > 127 else 0))
+    return obj
+
+
+def _pieces(mask: Any) -> tuple[Any, Any]:
+    """The 8-connected pieces of a bool array: (a label per pixel, 0 off the
+    mask, and each label's size, with size 0 for label 0)."""
+    import numpy as np
+
+    labels = np.zeros(mask.shape, dtype=np.int32)
+    sizes = [0]
+    hgt, wid = mask.shape
+    for y0, x0 in zip(*np.nonzero(mask), strict=True):
+        if labels[y0, x0]:
+            continue
+        n = len(sizes)
+        labels[y0, x0] = n
+        stack, count = [(int(y0), int(x0))], 0
+        while stack:
+            y, x = stack.pop()
+            count += 1
+            for ny in (y - 1, y, y + 1):
+                for nx in (x - 1, x, x + 1):
+                    if (
+                        0 <= ny < hgt
+                        and 0 <= nx < wid
+                        and mask[ny, nx]
+                        and not labels[ny, nx]
+                    ):
+                        labels[ny, nx] = n
+                        stack.append((ny, nx))
+        sizes.append(count)
+    return labels, np.array(sizes)
+
+
+def _box(a: Any, r: int) -> Any:
+    """The mean of a 2-D float array over a (2r+1) square round each pixel,
+    clipped at the edges."""
+    import numpy as np
+
+    p = np.pad(a, r, mode="edge").cumsum(0).cumsum(1)
+    p = np.pad(p, ((1, 0), (1, 0)))
+    k = 2 * r + 1
+    return (p[k:, k:] - p[:-k, k:] - p[k:, :-k] + p[:-k, :-k]) / (k * k)
+
+
+def _enclosed(shape: Any) -> Any:
+    """What a bool array encloses: the pixels outside it that cannot reach
+    the picture's edge without crossing it."""
+    import numpy as np
+
+    edges = np.zeros_like(shape)
+    edges[0, :], edges[-1, :], edges[:, 0], edges[:, -1] = True, True, True, True
+    return ~_grow(edges, ~shape) & ~shape
+
+
+def _runs(m: Any, n: int) -> Any:
+    """The pixels of a bool array lying in a run of at least ``n`` along
+    its rows."""
+    import numpy as np
+
+    c = np.pad(m.astype(np.int32), ((0, 0), (1, 0))).cumsum(1)
+    full = (c[:, n:] - c[:, :-n]) == n  # a run of n starts here
+    out = np.zeros_like(m)
+    for k in range(n):
+        out[:, k : k + full.shape[1]] |= full
+    return out
+
+
+def _ruled(mask: Any) -> Any:
+    """The straight, thin, long horizontal and vertical lines in a bool
+    array (a print's ruled border), grown by a pixel: runs a quarter of the
+    picture long of pixels at most four deep across the run, with the short
+    straight pieces joined to them. A branch lying level or at a slant is
+    deeper than that, and a thin twig at a slant makes no long run."""
+    out = mask & False
+    straight = mask & False
+    for axis in (0, 1):
+        m = mask if axis == 1 else mask.T
+        thin = m & ~_runs(m.T, 5).T
+        got = _runs(thin, max(8, m.shape[1] // 4))
+        out |= got if axis == 1 else got.T
+        short = _runs(thin, 6)
+        straight |= short if axis == 1 else short.T
+    # and the short ends of the same lines, round a corner or past a branch
+    # that crosses them
+    out = _grow(out, straight | out)
+    grown = out.copy()
+    grown[1:, :] |= out[:-1, :]
+    grown[:-1, :] |= out[1:, :]
+    grown[:, 1:] |= out[:, :-1]
+    grown[:, :-1] |= out[:, 1:]
+    return grown
+
+
+def _perch(bird: Any, rest: Any, solid: Any) -> Any:
+    """The pieces of ``rest`` (what is painted outside the cut-out model's
+    bird) that touch the bird and are a perch: a branch, its leaves or
+    flowers, with the small enclosed gaps in them that are in ``solid`` (off
+    the paper) filled. What is the painting's frame or background is left
+    out: a ruled line (a border), a piece far larger than the bird or
+    spanning most of the picture, one lying along the picture's edges, or
+    one that would close round a field larger than the bird. Bool arrays in
+    and out."""
+    import numpy as np
+
+    near = bird.copy()
+    near[1:, :] |= bird[:-1, :]
+    near[:-1, :] |= bird[1:, :]
+    near[:, 1:] |= bird[:, :-1]
+    near[:, :-1] |= bird[:, 1:]
+    # a ruled border is cut away first, so a branch that runs into the
+    # picture's frame keeps its length without bringing the frame with it
+    rest = rest & ~_ruled(rest)
+    labels, sizes = _pieces(rest)
+    area = max(1, int(bird.sum()))
+    hgt, wid = rest.shape
+    band = np.ones_like(rest)
+    my, mx = max(2, hgt // 8), max(2, wid // 8)
+    band[my:-my, mx:-mx] = False
+    base = int(_enclosed(bird).sum())
+    keep = np.zeros(len(sizes), dtype=bool)
+    for n in np.unique(labels[near & rest]):
+        if not n:
+            continue
+        piece = labels == n
+        ys, xs = np.nonzero(piece)
+        box = (np.ptp(ys) + 1) * (np.ptp(xs) + 1)
+        if sizes[n] > 2.5 * area or box > 0.6 * rest.size:
+            continue
+        if band[piece].mean() > 0.7:
+            continue
+        if sizes[n] > 0.02 * area and (
+            _enclosed(bird | piece).sum() - base > 0.5 * area
+        ):
+            continue
+        keep[n] = True
+    got = keep[labels]
+    # fill what the perch and bird enclose (a thick branch's inside, the
+    # middle of a flower), if it is off the paper and small
+    holes = _enclosed(got | bird) & solid
+    labels, sizes = _pieces(holes)
+    small = sizes < 0.15 * area
+    small[0] = False
+    return got | small[labels]
 
 
 def _cutout_masked(
@@ -2289,7 +2489,9 @@ def _cutout_masked(
     colour). Whitening outside a soft mask drops any wash or vignette the
     painter left round the bird, so only the bird and its perch are printed
     on the sheet. With ``cut_png``, the painting as the cut-out model
-    returned it, its alpha is the mask and nothing is guessed."""
+    returned it, its alpha is the bird's outline, and what touches it off
+    the paper (the branch it perches on, which the model cuts away) is kept
+    with it."""
     try:
         from PIL import Image, ImageChops, ImageFilter, ImageStat
     except ImportError:  # pragma: no cover
@@ -2305,26 +2507,26 @@ def _cutout_masked(
     edge.paste(im.crop((0, 0, w, b)), (0, 0))
     edge.paste(im.crop((0, h - b, w, h)), (0, b))
     paper = tuple(int(v) for v in ImageStat.Stat(edge).median)
-    hard = None
+    seed = None
     if cut_png:
         with contextlib.suppress(Exception):
             alpha = Image.open(io.BytesIO(cut_png)).convert("RGBA").getchannel("A")
-            hard = alpha.resize((w, h), Image.Resampling.BILINEAR).point(
-                lambda v: 255 if v > 127 else 0
-            )
-    if hard is None:
-        try:
-            hard = _bird_mask(im, paper)
-        except ImportError:  # pragma: no cover - numpy ships with Tesserae
-            diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert(
-                "L"
-            )
-            hard = diff.point(lambda v: 255 if v > 30 else 0)
-            hard = hard.filter(ImageFilter.MaxFilter(7)).filter(
-                ImageFilter.MinFilter(5)
-            )
-    # the crop box ignores specks: measure it on a slightly eroded mask
-    box = hard.filter(ImageFilter.MinFilter(7)).getbbox() or hard.getbbox()
+            seed = alpha.resize((w, h), Image.Resampling.BILINEAR)
+            if not seed.point(lambda v: 255 if v > 127 else 0).getbbox():
+                seed = None
+    try:
+        # the model's bird joined with the branch it stands on, found on the
+        # paper: the model cuts a perch away, and the sheet must not
+        hard = _bird_mask(im, paper, seed)
+        box = hard.getbbox()
+    except ImportError:  # pragma: no cover - numpy ships with Tesserae
+        diff = ImageChops.difference(im, Image.new("RGB", im.size, paper)).convert("L")
+        hard = diff.point(lambda v: 255 if v > 30 else 0)
+        hard = hard.filter(ImageFilter.MaxFilter(7)).filter(ImageFilter.MinFilter(5))
+        if seed is not None:
+            hard = ImageChops.lighter(hard, seed.point(lambda v: 255 if v > 127 else 0))
+        # the crop box ignores specks: measure it on a slightly eroded mask
+        box = hard.filter(ImageFilter.MinFilter(7)).getbbox() or hard.getbbox()
     if not box:
         return None
     pad = max(w, h) // 60
@@ -2585,12 +2787,10 @@ def _fugleramme() -> Any:
     return _FUGLERAMME[0]
 
 
-# Fugleramme's size search: the most of the short side one bird may take, how
-# many 0.9 steps it may shrink, and how far its collision mask is eroded so
-# birds nestle into each other's (invisible on paper) halos.
+# Fugleramme's size search: the most of the short side one bird may take and
+# how many 0.9 steps it may shrink.
 _FR_MAX_SHARE = 0.7
 _FR_ATTEMPTS = 20
-_FR_OVERLAP_PX = 2
 
 
 def _pack_fugleramme(
@@ -2602,7 +2802,7 @@ def _pack_fugleramme(
     arrange: str = "spiral",
 ) -> tuple[list[tuple[int, int, float]], list[tuple[float, float]]] | None:
     """Pack the cut-outs the way Fugleramme packs its collage: each bird's
-    eroded silhouette joined with a box for its label under the bird's
+    silhouette joined with a box for its label under the bird's
     centroid, raised into any gap under the outline, then placed by the
     spiral (first free spot on a walk out from the middle) or voids (the
     emptiest paper it fits on, nestled against its neighbours). The set
@@ -2616,7 +2816,7 @@ def _pack_fugleramme(
         import numpy as np
     except ImportError:  # pragma: no cover - numpy ships with Tesserae
         return None
-    from PIL import Image, ImageFilter
+    from PIL import Image
 
     fr = _fugleramme()
     layout = fr.LAYOUTS.get(arrange) or fr.LAYOUTS[fr.DEFAULT_LAYOUT]
@@ -2657,12 +2857,12 @@ def _pack_fugleramme(
         m = m.resize(size, Image.Resampling.BILINEAR)
         if b.get("rot"):
             m = m.rotate(b["rot"], expand=True, resample=Image.Resampling.BILINEAR)
-        hard = m.point(lambda v: 255 if v > 127 else 0)
-        art = np.asarray(
-            hard.filter(ImageFilter.MinFilter(_FR_OVERLAP_PX * 2 + 1)), dtype=bool
-        )
-        if not art.any():  # thinner than the erosion: keep it whole
-            art = np.asarray(hard, dtype=bool)
+        # the collision mask is the whole cut-out, not eroded: the mask
+        # already carries a hairline of paper round the ink, so birds nestle
+        # up to each other's halos with paper between them. Any pixel the
+        # mask touches counts, so a thin leg, beak or twig that is drawn is
+        # never packed over (an erosion took those away)
+        art = np.asarray(m.point(lambda v: 255 if v > 8 else 0), dtype=bool)
         # fugleramme's _with_label: the name under the body's centroid, not
         # the tail's, raised until it clears the outline
         ah, aw = art.shape

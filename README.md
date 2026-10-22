@@ -1,6 +1,6 @@
 # Backyard Birds
 
-> **The collage page has moved.** The cluster / specimen-sheet page of this widget is superseded by [Specimen Sheet](https://github.com/dmellok/tesserae-widget-specimen-sheet), one widget for the page over BirdNET-Go, iNaturalist and GBIF, with model-made cut-outs, a balanced layout, eleven styles and a painted scene. Backyard Birds keeps its other layouts and stays installable.
+> **Looking for a dedicated specimen sheet?** [Specimen Sheet](https://github.com/dmellok/tesserae-widget-specimen-sheet) is a separate widget built only for that page, over BirdNET-Go, iNaturalist and GBIF, with model-made cut-outs, a balanced layout, eleven styles and a painted scene. Backyard Birds keeps its own cluster page alongside its other layouts.
 
 A [Tesserae](https://github.com/dmellok/tesserae) widget showing the birds [BirdNET-Go](https://github.com/tphakala/birdnet-go) has heard today, illustrated with classic natural history plates by Audubon, Gould, Lear and others.
 
@@ -41,7 +41,7 @@ Four more frame the bird as an object. **Postage stamp** puts it on a perforated
 
 **Period** shows to-day, BirdNET-Go's day as it fills, or this week, the last seven days together from BirdNET-Go's species summary (no hours, so the strips and chart go quiet).
 
-**Cluster: poses** paints every bird perched, or every other bird in flight so a page is not eight profiles on branches; each pose is its own painting. Once a painting lands, the widget asks fal.ai's BiRefNet model for the same picture with its paper removed and keeps it beside the painting, so the cluster page cuts on the bird's true outline rather than guessing where the paper ends.
+**Cluster: poses** paints every bird perched, or every other bird in flight so a page is not eight profiles on branches; each pose is its own painting. Once a painting lands, the widget asks fal.ai's BiRefNet model for the same picture with its paper removed and keeps it beside the painting, so the cluster page cuts on the bird's true outline rather than guessing where the paper ends. The model cuts away the branch the bird perches on, so the widget adds back what is painted on the paper and touches the bird: the branch, its leaves and flowers stay whole, while a print's painted sky or ruled frame is left out.
 
 **Which bird** picks the bird the latest visitor, book plate and full bleed show: the one just heard, the rarest heard today (from the widget's own log of the days each bird was heard here), the one with most or fewest calls, or a new or returning species. **Draw the bird's song line** traces the bird's latest call under its name, from BirdNET-Go's sonogram of the detection; the **sonogram** caption shows the whole sonogram as a scientific strip. A bird heard again after six weeks or more away is marked *back* where new birds are marked *new*.
 
