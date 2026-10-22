@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.14.2",
+  "version": "0.15.0",
   "kind": "widget",
   "render": {
     "warm_ahead_s": 150
@@ -696,7 +696,7 @@
       "type": "select",
       "label": "Cluster: arrangement",
       "default": "auto",
-      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the drawer always uses its compartments. fal.ai composes the scene repaints up to six birds together as one picture, about US$0.04 a time, and takes the scene options below.",
+      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the drawer always uses its compartments. Spiral and Voids pack the birds by their outlines with Fugleramme's packer, each name tucked under its bird: Spiral grows out from the middle with the biggest birds there, Voids puts each bird on the emptiest paper and fills the page. fal.ai composes the scene repaints up to six birds together as one picture, about US$0.04 a time, and takes the scene options below.",
       "choices": [
         {
           "value": "auto",
@@ -725,6 +725,14 @@
         {
           "value": "heap",
           "label": "Heap, biggest at the bottom"
+        },
+        {
+          "value": "spiral",
+          "label": "Spiral (Fugleramme)"
+        },
+        {
+          "value": "voids",
+          "label": "Voids (Fugleramme)"
         },
         {
           "value": "fal",

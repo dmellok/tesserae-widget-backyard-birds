@@ -1176,7 +1176,20 @@ FOOTERS = ("show", "credits", "hide")
 # Type size on the cluster page, per cent of the look's own.
 TEXT_SCALES = ("100", "60", "80", "125", "150")
 # Where the birds go on a printed cluster page; "auto" is the look's own.
-ARRANGEMENTS = ("auto", "oval", "circle", "ring", "rows", "scatter", "heap", "fal")
+ARRANGEMENTS = (
+    "auto",
+    "oval",
+    "circle",
+    "ring",
+    "rows",
+    "scatter",
+    "heap",
+    "spiral",
+    "voids",
+    "fal",
+)
+# The arrangements packed with Fugleramme's packer (fugleramme_packing.py).
+FUGLERAMME_ARRANGEMENTS = ("spiral", "voids")
 # Where fal.ai puts the birds when it composes the scene (arrangement "fal").
 SCENES = {
     "auto": "the birds gathered in an oval cluster, like a Victorian vignette, on branches and foliage that join them",
@@ -2550,6 +2563,189 @@ def _pack_sheet(
     return best
 
 
+_FUGLERAMME: list[Any] = []
+
+
+def _fugleramme() -> Any:
+    """fugleramme_packing.py beside this file, loaded by path once."""
+    if not _FUGLERAMME:
+        import importlib.util
+        import sys
+
+        name = "bb_fugleramme_packing"
+        spec = importlib.util.spec_from_file_location(
+            name, HERE / "fugleramme_packing.py"
+        )
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise ImportError("fugleramme_packing.py is missing")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+        _FUGLERAMME.append(mod)
+    return _FUGLERAMME[0]
+
+
+# Fugleramme's size search: the most of the short side one bird may take, how
+# many 0.9 steps it may shrink, and how far its collision mask is eroded so
+# birds nestle into each other's (invisible on paper) halos.
+_FR_MAX_SHARE = 0.7
+_FR_ATTEMPTS = 20
+_FR_OVERLAP_PX = 2
+
+
+def _pack_fugleramme(
+    birds: list[dict[str, Any]],
+    W: int,
+    H: int,
+    label: float = SHEET_LABEL,
+    mode: str = "sheet",
+    arrange: str = "spiral",
+) -> tuple[list[tuple[int, int, float]], list[tuple[float, float]]] | None:
+    """Pack the cut-outs the way Fugleramme packs its collage: each bird's
+    eroded silhouette joined with a box for its label under the bird's
+    centroid, raised into any gap under the outline, then placed by the
+    spiral (first free spot on a walk out from the middle) or voids (the
+    emptiest paper it fits on, nestled against its neighbours). The set
+    starts large, shrinks by 0.9 until it fits, then bisects back toward the
+    size that failed as far as the arrangement allows, and the cluster is
+    centred. Labels keep the sheet's type size; only the birds shrink.
+
+    Returns ([(x, y, scale)], [(label x, label y)] as page fractions), or
+    None if nothing fits or numpy is missing."""
+    try:
+        import numpy as np
+    except ImportError:  # pragma: no cover - numpy ships with Tesserae
+        return None
+    from PIL import Image, ImageFilter
+
+    fr = _fugleramme()
+    layout = fr.LAYOUTS.get(arrange) or fr.LAYOUTS[fr.DEFAULT_LAYOUT]
+    # the same paper the other arrangements keep clear: the notebook's
+    # margin and heading, the caption along the foot
+    top = 0.1 if mode == "notebook" else 0.05
+    left = 0.12 if mode == "notebook" else 0.04
+    x0, y0 = int(W * left), int(H * top)
+    pw, ph = int(W * 0.96) - x0, int(H * 0.93) - y0
+    # the label as the client sets it: small caps at `label` of the page's
+    # height (larger for the plate's numbers and the notebook's hand), 1.15
+    # lines, moved down 15% of its own height
+    fpx = label * H * {"numbered": 1.7, "notebook": 1.5}.get(mode, 1.0)
+    gap = round(fpx * 0.35)
+
+    def label_box(b: dict[str, Any]) -> tuple[int, int]:
+        lines = ["00"] if mode == "numbered" else (b.get("lines") or [b["name"]])
+        if mode == "notebook":
+            # always in Caveat, a narrow hand, and tilted with its bird
+            w = max(len(t) for t in lines) * 0.55 * fpx
+            return int(w) + 4, int(np.ceil(1.15 * len(lines) * fpx + 0.07 * w))
+        w = max(len(t) * (0.74 if i == 0 else 0.5) for i, t in enumerate(lines))
+        return int(w * fpx) + 4, int(np.ceil(1.15 * len(lines) * fpx))
+
+    boxes = [label_box(b) for b in birds]
+
+    class Sprite:
+        def __init__(
+            self, i: int, scale: float, mask: Any, art_x: int, lab: tuple[int, int]
+        ) -> None:
+            self.i, self.scale, self.mask = i, scale, mask
+            self.art_x, self.lab = art_x, lab
+
+    def sprite(i: int, scale: float) -> Sprite:
+        b = birds[i]
+        m = b["mask"]
+        size = (max(1, int(m.width * scale)), max(1, int(m.height * scale)))
+        m = m.resize(size, Image.Resampling.BILINEAR)
+        if b.get("rot"):
+            m = m.rotate(b["rot"], expand=True, resample=Image.Resampling.BILINEAR)
+        hard = m.point(lambda v: 255 if v > 127 else 0)
+        art = np.asarray(
+            hard.filter(ImageFilter.MinFilter(_FR_OVERLAP_PX * 2 + 1)), dtype=bool
+        )
+        if not art.any():  # thinner than the erosion: keep it whole
+            art = np.asarray(hard, dtype=bool)
+        # fugleramme's _with_label: the name under the body's centroid, not
+        # the tail's, raised until it clears the outline
+        ah, aw = art.shape
+        lw, lh = boxes[i]
+        cols = art.nonzero()[1]
+        centre = cols.mean() if cols.size else aw / 2
+        offset = round(centre - lw / 2)
+        lft = min(0, offset)
+        width = max(aw, offset + lw) - lft
+        ax, lx = -lft, offset - lft
+        under = art[:, max(0, lx - ax) : min(aw, lx - ax + lw)]
+        bottom = np.nonzero(under.any(axis=1))[0]
+        ltop = (bottom[-1] + 1 if bottom.size else ah) + gap
+        height = max(ah, ltop + lh)
+        mask = np.zeros((height, width), dtype=bool)
+        mask[:ah, ax : ax + aw] = art
+        mask[ltop : ltop + lh, lx : lx + lw] = True
+        return Sprite(i, scale, mask, ax, (lx + lw // 2, ltop))
+
+    # fugleramme's base size: the set's bounding squares at 1.5 times the
+    # page, capped so no bird takes more than 70% of its short side
+    reach = [b["factor"] * max(b["mask"].size) for b in birds]
+    base = min(
+        (W * H * 1.5 / max(1e-9, sum(r * r for r in reach))) ** 0.5,
+        min(pw, ph) * _FR_MAX_SHARE / max(reach),
+    )
+
+    def attempt(shrink: float) -> list[tuple[Sprite, int, int]] | None:
+        sprites = [sprite(i, base * shrink * b["factor"]) for i, b in enumerate(birds)]
+        anchor = None
+        if mode == "wreath":
+            # the wreath's title sits in the middle: hold it clear first
+            tw, th = int(W * 0.38), int(label * H * 9)
+            sprites.insert(0, Sprite(-1, 0.0, np.ones((th, tw), dtype=bool), 0, (0, 0)))
+            # where the page's middle falls on it, pinned to the pack's middle
+            anchor = (tw // 2, th // 2 + ph // 2 - (H // 2 - y0))
+        placed = layout.pack(sprites, pw, ph, anchor)
+        if placed is None:
+            return None
+        if mode == "wreath":
+            return [p for p in placed if p[0].i >= 0]
+        xs0 = min(x for _, x, _ in placed)
+        ys0 = min(y for _, _, y in placed)
+        xs1 = max(x + s.mask.shape[1] for s, x, _ in placed)
+        ys1 = max(y + s.mask.shape[0] for s, _, y in placed)
+        dx = (pw - (xs1 - xs0)) // 2 - xs0
+        dy = (ph - (ys1 - ys0)) // 2 - ys0
+        return [(s, x + dx, y + dy) for s, x, y in placed]
+
+    fit = None
+    failed = None
+    shrink = 1.0
+    for step in range(_FR_ATTEMPTS):
+        shrink = 0.9**step
+        fit = attempt(shrink)
+        if fit is not None:
+            break
+        failed = shrink
+    if fit is None:
+        return None
+    if failed is not None:
+        small, large = shrink, failed
+        for _ in range(layout.refine):
+            middle = (small + large) / 2
+            got = attempt(middle)
+            if got is None:
+                large = middle
+            else:
+                fit, small = got, middle
+    spots: list[tuple[int, int, float]] = [(0, 0, 0.0)] * len(birds)
+    anchors: list[tuple[float, float]] = [(0.0, 0.0)] * len(birds)
+    for s, x, y in fit:
+        lx, ly = s.lab
+        spots[s.i] = (x0 + x + s.art_x, y0 + y, s.scale)
+        lh = boxes[s.i][1]
+        # the client moves a label down 15% of its height: start it there
+        anchors[s.i] = (
+            round((x0 + x + lx) / W, 4),
+            round((y0 + y + ly - 0.15 * lh) / H, 4),
+        )
+    return spots, anchors
+
+
 def _drawer_grid(n: int, W: int, H: int) -> list[tuple[int, int, int, int]]:
     """Compartments of the specimen drawer, as (x, y, w, h) inside its frame."""
     import math
@@ -2648,7 +2844,19 @@ def _build_sheet(
             ((x + w / 2) / W, (y + h - tag_h * 0.95) / H) for x, y, w, h in cells
         ]
     else:
-        spots = _pack_sheet(birds, W, H, label, mode, arrange)
+        anchors = []
+        packed = (
+            _pack_fugleramme(birds, W, H, label, mode, arrange)
+            if arrange in FUGLERAMME_ARRANGEMENTS
+            else None
+        )
+        if packed:
+            spots, anchors = packed
+        else:
+            # Fugleramme's packers could not fit them (or numpy is missing):
+            # the look's own arrangement instead
+            fallback = "auto" if arrange in FUGLERAMME_ARRANGEMENTS else arrange
+            spots = _pack_sheet(birds, W, H, label, mode, fallback)
         if spots is None:
             return
         sheet = Image.new("RGB", (W, H), avg if mode != "notebook" else (246, 239, 219))
@@ -2662,7 +2870,6 @@ def _build_sheet(
                 fill=(214, 120, 110),
                 width=max(1, H // 700),
             )
-        anchors = []
 
     shown = []
     for i, (b, (x, y, scale)) in enumerate(zip(birds, spots, strict=True)):

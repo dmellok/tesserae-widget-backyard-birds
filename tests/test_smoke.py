@@ -1311,7 +1311,9 @@ def test_pending_paintings_are_counted_for_a_warm_ahead(tmp_path):
     import server
 
     r = server.fetch({}, {}, ctx={"data_dir": str(tmp_path), "preview": False})
-    assert r["live_pending"] == 0 and not r.get("live_refresh_s"), "the demo garden has nothing on the way"
+    assert r["live_pending"] == 0 and not r.get("live_refresh_s"), (
+        "the demo garden has nothing on the way"
+    )
     with server._PAINTING_LOCK:
         server._PAINTING.add("x")
     try:
@@ -1320,3 +1322,147 @@ def test_pending_paintings_are_counted_for_a_warm_ahead(tmp_path):
     finally:
         with server._PAINTING_LOCK:
             server._PAINTING.discard("x")
+
+
+def _demo_sheet_birds(sizing: str = "true") -> list[dict]:
+    """The demo garden's birds as _build_sheet hands them to a packer: a cut-out
+    mask each (a body, a tail and a perch, its shape steady per name), the
+    sizing option's factor, the label lines, biggest first."""
+    import hashlib
+
+    from PIL import ImageDraw
+
+    with _at(8):
+        now = server.datetime.now()
+    species = server._demo(MELBOURNE, now)["species"]
+    lengths = server._lengths()
+    top = max(s["count"] for s in species) or 1
+    birds = []
+    for s in sorted(species, key=lambda s: -s["count"])[:12]:
+        h = hashlib.sha1(s["name"].encode()).digest()
+        w, ht = 260 + h[0], 300 + h[1]
+        mask = Image.new("L", (w, ht), 0)
+        d = ImageDraw.Draw(mask)
+        d.ellipse((w * 0.2, ht * 0.15, w * 0.75, ht * 0.65), fill=255)
+        d.polygon(
+            [(w * 0.6, ht * 0.5), (w * 0.98, ht * 0.9), (w * 0.7, ht * 0.95)], 255
+        )
+        d.rectangle((0, ht * 0.7, w * (0.5 + h[2] / 512), ht * 0.76), fill=255)
+        factor = {
+            "true": server._size_factor(s["sci"], lengths),
+            "busy": round(0.65 + (s["count"] / top) ** 0.325, 2),
+            "same": 1.0,
+        }[sizing]
+        birds.append(
+            {
+                "name": s["name"],
+                "sci": s["sci"],
+                "mask": mask,
+                "factor": factor,
+                "rot": 0.0,
+                "lines": [s["name"], s["sci"]],
+            }
+        )
+    birds.sort(key=lambda b: -(b["factor"] ** 2) * b["mask"].width * b["mask"].height)
+    return birds
+
+
+@pytest.mark.parametrize("arrange", ["spiral", "voids"])
+@pytest.mark.parametrize("size", [(1600, 960), (900, 1600)])
+@pytest.mark.parametrize("sizing", ["true", "busy", "same"])
+def test_fugleramme_arrangements_pack_without_overlap(arrange, size, sizing):
+    import numpy as np
+    from PIL import ImageFilter
+
+    W, H = size
+    label = 0.017
+    birds = _demo_sheet_birds(sizing)
+    got = server._pack_fugleramme(birds, W, H, label, "sheet", arrange)
+    assert got is not None, "the demo garden fits"
+    spots, anchors = got
+    assert len(spots) == len(anchors) == len(birds)
+    page = np.zeros((H, W), dtype=np.int16)
+    fpx = label * H
+    for b, (x, y, scale), (ax, ay) in zip(birds, spots, anchors, strict=True):
+        assert scale > 0, f"{b['name']} was left off"
+        m = b["mask"]
+        fit = m.resize((max(1, int(m.width * scale)), max(1, int(m.height * scale))))
+        hard = fit.point(lambda v: 255 if v > 127 else 0)
+        # the opaque pixels, less the 2 px halo Fugleramme lets birds nestle into
+        body = np.asarray(hard.filter(ImageFilter.MinFilter(5)), dtype=bool)
+        h, w = body.shape
+        assert 0 <= x and 0 <= y and x + w <= W and y + h <= H, (
+            "the bird is on the page"
+        )
+        page[y : y + h, x : x + w] += body
+        # its label as the client sets it, from where the packer anchored it
+        lw = (
+            int(
+                max(
+                    len(t) * (0.74 if i == 0 else 0.5) for i, t in enumerate(b["lines"])
+                )
+                * fpx
+            )
+            + 4
+        )
+        lh = int(np.ceil(1.15 * len(b["lines"]) * fpx))
+        lx0, ly0 = round(ax * W - lw / 2), round(ay * H + 0.15 * lh)
+        assert 0 <= lx0 and 0 <= ly0 and lx0 + lw <= W + 1 and ly0 + lh <= H + 1, (
+            "the label is on the page"
+        )
+        assert ly0 >= y, "the label is under its bird"
+        page[max(0, ly0 + 1) : ly0 + lh - 1, max(0, lx0 + 1) : lx0 + lw - 1] += 1
+    assert page.max() <= 1, "no bird or label overlaps another"
+    # the cluster is centred on the page
+    ys, xs = np.nonzero(page)
+    assert abs((xs.min() + xs.max()) / 2 - W / 2) < W * 0.06
+    assert abs((ys.min() + ys.max()) / 2 - H * 0.49) < H * 0.06
+
+
+def test_fugleramme_spiral_puts_the_big_birds_in_the_middle():
+    W, H = 1600, 960
+    birds = _demo_sheet_birds("busy")
+    spots, _anchors = server._pack_fugleramme(birds, W, H, 0.017, "sheet", "spiral")
+
+    def off_centre(i):
+        x, y, s = spots[i]
+        m = birds[i]["mask"]
+        return (
+            abs(x + m.width * s / 2 - W / 2) / W + abs(y + m.height * s / 2 - H / 2) / H
+        )
+
+    assert off_centre(0) < sum(off_centre(i) for i in range(len(birds))) / len(birds)
+
+
+def test_fugleramme_arrangements_build_a_sheet_and_key_the_cache(tmp_path, offline):
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    tags = {}
+    for arrange in ("spiral", "voids"):
+        opts = {
+            **MELBOURNE,
+            "layout": "cluster",
+            "pictures": "gen",
+            "cluster_size": 3,
+            "cluster_arrange": arrange,
+        }
+        with _at(8):
+            for _ in range(5):
+                server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+                _settle()
+            r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+        c = r["cluster"]
+        assert c["sheet"] and len(c["birds"]) == 3 and c["mode"] == "sheet"
+        for b in c["birds"]:
+            x, y = b["at"]
+            assert 0 <= x <= 1 and 0 <= y <= 1
+        made = {
+            p.stem
+            for p in (tmp_path / "gen").glob("sheet_*.json")
+            if json.loads(p.read_text(encoding="utf-8")).get("arrange") == arrange
+            and len(json.loads(p.read_text(encoding="utf-8"))["birds"]) == 3
+        }
+        assert len(made) == 1, "the three-bird sheet in this arrangement"
+        tags[arrange] = made.pop()
+    assert tags["spiral"] != tags["voids"]
+    assert len(offline.bodies) == 3, "the second arrangement paints nothing new"
+    assert server._choice("voids", server.ARRANGEMENTS) == "voids"
