@@ -63,7 +63,6 @@ A Tesserae page is composed once and quantised for each panel afterwards, so the
 | ![Cluster, Voids arrangement, field notebook](screenshots/extra-3.png) | ![Book plate](screenshots/extra-4.png) |
 | ![Full bleed in portrait cells: woodblock print and Art Nouveau captions, AI paintings](screenshots/extra-5.png) | ![Full bleed captions: folio plate, museum label, postage stamp, cameo](screenshots/extra-6.png) |
 | ![Atlas](screenshots/extra-7.png) | ![Gallery](screenshots/extra-8.png) |
-| ![Dawn chorus above a day chart with counts](screenshots/extra-9.png) | |
 
 ## Pictures
 
