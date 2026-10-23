@@ -8,7 +8,10 @@ API):
 
   /api/v2/analytics/species/daily   today's species: count, hourly counts,
                                     first and latest heard, new-species flags
-  /api/v2/detections/recent         the latest individual detections
+  /api/v2/detections/recent         the latest individual detections, and
+                                    for a window under a day the last
+                                    thousand, counted per bird
+  /api/v2/analytics/species/summary the species over a longer window
 
 Both are public unless BirdNET-Go's Private Mode is on, in which case an API
 token goes in the Authorization header. With no server URL the widget runs in
@@ -201,13 +204,19 @@ def _is_progress(note: str) -> bool:
 
 
 def _rarity(
-    data_dir: Path, species: list[dict[str, Any]], today: str
+    data_dir: Path,
+    species: list[dict[str, Any]],
+    today: str,
+    heard: list[dict[str, Any]] | None = None,
 ) -> dict[str, tuple[str, float, str]]:
-    """How usual each of today's birds is in this garden, from a log the
+    """How usual each of the window's birds is in this garden, from a log the
     widget keeps of the days each species was heard (gen-free, in
     rarity.json). Until a week has been logged it says so plainly; after
     that: first visit, rare here, occasional, regular or daily, from the
-    share of logged days in the last 30 on which the bird was heard."""
+    share of logged days in the last 30 on which the bird was heard.
+
+    ``heard`` are the birds to log as heard to-day (all of ``species`` by
+    default): a longer window holds birds last heard on an earlier day."""
     path = data_dir / "rarity.json"
     log = _read_json(path, {})
     log = log if isinstance(log, dict) else {}
@@ -219,12 +228,14 @@ def _rarity(
     if today not in days:
         days.append(today)
         changed = True
-    for s in species:
+    for s in species if heard is None else heard:
         key = s.get("sci") or s["name"]
         hits = seen.setdefault(key, [])
         if today not in hits:
             hits.append(today)
             changed = True
+    for s in species:
+        key = s.get("sci") or s["name"]
         if names.get(key) != s["name"]:
             names[key] = s["name"]
             changed = True
@@ -271,6 +282,95 @@ def _rarity(
     return out
 
 
+def _days_heard(data_dir: Path) -> tuple[dict[str, list[str]], str]:
+    """The rarity log's days per bird, and the first day logged."""
+    log = _read_json(data_dir / "rarity.json", {})
+    log = log if isinstance(log, dict) else {}
+    seen = log.get("seen") if isinstance(log.get("seen"), dict) else {}
+    days = log.get("days") if isinstance(log.get("days"), list) else []
+    return (
+        {k: sorted(v) for k, v in seen.items() if isinstance(v, list)},
+        min(days) if days else "",
+    )
+
+
+def _last_key(s: dict[str, Any]) -> str:
+    """When a bird was last heard, as text that sorts across days."""
+    return str(s.get("last_at") or s.get("last") or "")
+
+
+def _ranked(
+    species: list[dict[str, Any]],
+    ranking: str,
+    n: int,
+    ever: dict[str, list[str]] | None = None,
+    lead: str | None = None,
+) -> list[dict[str, Any]]:
+    """The ``n`` birds a page keeps when more were heard, by Fugleramme's
+    rankings: the most heard, the rarest in the window (fewest calls), the
+    rarest all time (fewest days in the widget's own log of the garden, then
+    fewest calls) or the latest heard. ``lead`` (a bird's name) takes a place
+    ahead of the ranking. Ties break on the name, so a page at its limit does
+    not flicker between two equally heard birds."""
+    ever = ever or {}
+
+    def key(s: dict[str, Any]) -> tuple[Any, ...]:
+        if ranking == "rarest":
+            return (s["count"], s["name"])
+        if ranking == "rarest_ever":
+            days = len(ever.get(s.get("sci") or s["name"], [])) or 1
+            return (days, s["count"], s["name"])
+        if ranking == "last_heard":
+            return (_neg(_last_key(s)), s["name"])
+        return (-s["count"], s["name"])
+
+    first = [s for s in species if lead and s["name"] == lead][:1]
+    rest = sorted((s for s in species if s not in first), key=key)
+    return first + rest[: max(0, n - len(first))]
+
+
+def _arrival(
+    species: list[dict[str, Any]],
+    ever: dict[str, list[str]],
+    log_start: str,
+    window: str,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """The window's newest arrival: a bird BirdNET-Go calls new, or one back
+    after a long absence, or (over a longer window) the bird the widget's log
+    first met latest, as long as that was after the log began. The latest
+    heard of them wins a tie."""
+    today = now.strftime("%Y-%m-%d")
+    if window == "today":
+        start = today
+    elif window == "week":
+        start = (now - timedelta(days=6)).strftime("%Y-%m-%d")
+    elif window == "0":
+        start = ""
+    else:
+        start = (now - timedelta(hours=float(window))).strftime("%Y-%m-%d")
+
+    def arrived(s: dict[str, Any]) -> str:
+        days = ever.get(s.get("sci") or s["name"]) or []
+        if s.get("new"):
+            return today
+        if s.get("returning"):
+            return days[-1] if days else today
+        first = days[0] if days else ""
+        return first if first and first > log_start and first >= start else ""
+
+    found = [(arrived(s), s) for s in species]
+    found = [(day, s) for day, s in found if day]
+    if not found:
+        return None
+    return max(found, key=lambda f: (f[0], _last_key(f[1])))[1]
+
+
+def _neg(text: str) -> tuple[int, ...]:
+    """A sort key that puts later text first."""
+    return tuple(-ord(c) for c in text)
+
+
 def _choice(value: Any, allowed: tuple[str, ...]) -> str:
     v = str(value or "").strip()
     return v if v in allowed else allowed[0]
@@ -293,7 +393,16 @@ def _minutes(hhmm: str) -> int | None:
         return None
 
 
-def _ago_min(hhmm: str, now: datetime) -> int | None:
+def _ago_min(hhmm: str, now: datetime, last_at: str = "") -> int | None:
+    """Minutes since the bird was last heard: from its dated last call when
+    there is one (a window over days), else from the clock time to-day."""
+    if last_at:
+        with contextlib.suppress(ValueError):
+            then = datetime.fromisoformat(last_at).replace(second=0, tzinfo=None)
+            diff = (
+                now.replace(second=0, microsecond=0, tzinfo=None) - then
+            ).total_seconds()
+            return int(diff // 60) if diff >= 0 else None
     mins = _minutes(hhmm)
     if mins is None:
         return None
@@ -379,57 +488,187 @@ def _base_url(raw: str) -> str:
     return raw
 
 
-def _from_birdnet(
-    base: str, token: str, min_conf: int, window: str = "today", today: str = ""
-) -> tuple[dict[str, Any] | None, str | None]:
-    """BirdNET-Go's species for the day, or for the last seven days from its
-    species summary (which has no hours, so the strips go quiet)."""
-    if window == "week" and today:
-        start = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=6)).strftime(
-            "%Y-%m-%d"
-        )
-        daily, err = _json(
-            f"{base}/api/v2/analytics/species/summary?start_date={start}&end_date={today}&min_confidence={min_conf}",
-            token,
-        )
-    else:
-        daily, err = _json(
-            f"{base}/api/v2/analytics/species/daily?min_confidence={min_conf}", token
-        )
-    if err == "auth":
-        return None, ERR_AUTH
-    if err == "unreachable":
-        return None, ERR_UNREACHABLE.format(url=base)
-    if err:
-        return None, f"BirdNET-Go answered {err}. Is the URL right?"
-    if not isinstance(daily, list):
-        return (
-            None,
-            "BirdNET-Go's species summary wasn't in the expected shape. Is the URL right?",
-        )
+def _stamp(value: Any) -> datetime | None:
+    """An ISO stamp from BirdNET-Go, with its offset if it has one."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value.strip().replace(" ", "T", 1))
+    except ValueError:
+        return None
 
-    species = []
-    for s in daily:
-        if not isinstance(s, dict) or not s.get("common_name"):
+
+def _local_iso(value: Any) -> str:
+    """'2026-10-11T07:42:10+11:00' -> '2026-10-11T07:42:10': the station's own
+    wall clock, which sorts as text and dates the call."""
+    st = _stamp(value)
+    return st.replace(tzinfo=None).isoformat(timespec="seconds") if st else ""
+
+
+def _cutoff(now: datetime | None, hours: float) -> datetime | None:
+    if now is None or hours <= 0:
+        return None
+    return now - timedelta(hours=hours)
+
+
+def _after(value: Any, since: datetime | None) -> bool:
+    """Whether a stamp falls at or after the cutoff. A stamp without an
+    offset is read in the cutoff's zone, as the station's wall clock is."""
+    if since is None:
+        return True
+    st = _stamp(value)
+    if st is None:
+        return True
+    if st.tzinfo is None:
+        st = st.replace(tzinfo=since.tzinfo)
+    return st >= since
+
+
+def _from_feed(rows: list[Any], min_conf: int, since: datetime) -> list[dict[str, Any]]:
+    """A sub-day window's species counted off the detections feed, the way
+    Fugleramme counts one, each with its hours, first and last call."""
+    by: dict[str, dict[str, Any]] = {}
+    for d in rows:
+        if not isinstance(d, dict) or not d.get("commonName"):
             continue
-        hourly = s.get("hourly_counts")
-        species.append(
-            {
-                "name": str(s["common_name"]),
-                "sci": str(s.get("scientific_name") or ""),
-                "count": int(s.get("count") or 0),
-                "hourly": [int(h or 0) for h in hourly][:24]
-                if isinstance(hourly, list)
-                else [],
-                "first": _hhmm(s.get("first_heard")),
-                "last": _hhmm(s.get("latest_heard") or s.get("last_heard")),
-                "conf": round(float(s.get("max_confidence") or 0), 2),
-                "new": bool(s.get("is_new_species")),
-                "thumb": str(s.get("thumbnail_url") or ""),
-            }
+        if d.get("verified") == "false_positive":
+            continue
+        conf = float(d.get("confidence") or 0)
+        if conf * 100 < min_conf:
+            continue
+        at = d.get("timestamp") or (
+            f"{d.get('date')}T{d.get('time')}" if d.get("date") else ""
         )
+        if not _after(at, since):
+            continue
+        iso = _local_iso(at)
+        if not iso:
+            continue
+        name = str(d["commonName"])
+        s = by.setdefault(
+            name,
+            {
+                "name": name,
+                "sci": str(d.get("scientificName") or ""),
+                "count": 0,
+                "hourly": [0] * 24,
+                "first_at": iso,
+                "last_at": iso,
+                "conf": 0.0,
+                "new": False,
+                # where BirdNET-Go's summaries point for the bird's picture
+                "thumb": "/api/v2/media/image/"
+                + urllib.parse.quote(str(d.get("scientificName") or name)),
+            },
+        )
+        s["count"] += 1
+        s["hourly"][int(iso[11:13])] += 1
+        s["first_at"] = min(s["first_at"], iso)
+        s["last_at"] = max(s["last_at"], iso)
+        s["conf"] = max(s["conf"], round(conf, 2))
+    out = []
+    for s in by.values():
+        s["first"], s["last"] = s["first_at"][11:16], s["last_at"][11:16]
+        out.append(s)
+    return sorted(out, key=lambda s: -s["count"])
 
-    recent_raw, _rerr = _json(f"{base}/api/v2/detections/recent?limit=20", token)
+
+def _from_birdnet(
+    base: str,
+    token: str,
+    min_conf: int,
+    window: str = "today",
+    today: str = "",
+    now: datetime | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """BirdNET-Go's species for the window. To-day comes from its daily
+    summary, with hours. A window shorter than a day is counted off the
+    detections feed, as Fugleramme counts one; the longer ones (and a feed
+    that runs out before the cutoff) from its species summary over the dates
+    the window touches, rounded outward, keeping the birds whose last call
+    is inside it (no hours, so the strips go quiet)."""
+    hours = 0.0 if window in ("today", "week") else float(window)
+    since = _cutoff(now, hours)
+    feed_rows: list[Any] | None = None
+    species: list[dict[str, Any]] | None = None
+    if window in SUB_DAY and since is not None:
+        feed, ferr = _json(f"{base}/api/v2/detections/recent?limit={FEED_SCAN}", token)
+        if ferr == "auth":
+            return None, ERR_AUTH
+        if isinstance(feed, list):
+            feed_rows = feed
+            oldest = min(
+                (
+                    st if st.tzinfo else st.replace(tzinfo=since.tzinfo)
+                    for d in feed
+                    if isinstance(d, dict)
+                    and (st := _stamp(d.get("timestamp"))) is not None
+                ),
+                default=None,
+            )
+            short = len(feed) >= FEED_SCAN and oldest is not None and oldest > since
+            if not short:
+                species = _from_feed(feed, min_conf, since)
+    if species is None:
+        start = end = ""
+        if window == "week" and today:
+            start = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=6)).strftime(
+                "%Y-%m-%d"
+            )
+            end = today
+        elif window != "today" and since is not None and now is not None:
+            start, end = since.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d")
+        if window == "today":
+            url = f"{base}/api/v2/analytics/species/daily?min_confidence={min_conf}"
+        elif start:
+            url = f"{base}/api/v2/analytics/species/summary?start_date={start}&end_date={end}&min_confidence={min_conf}"
+        else:  # all time
+            url = f"{base}/api/v2/analytics/species/summary?min_confidence={min_conf}"
+        daily, err = _json(url, token)
+        if err == "auth":
+            return None, ERR_AUTH
+        if err == "unreachable":
+            return None, ERR_UNREACHABLE.format(url=base)
+        if err:
+            return None, f"BirdNET-Go answered {err}. Is the URL right?"
+        if not isinstance(daily, list):
+            return (
+                None,
+                "BirdNET-Go's species summary wasn't in the expected shape. Is the URL right?",
+            )
+        species = []
+        for s in daily:
+            if not isinstance(s, dict) or not s.get("common_name"):
+                continue
+            last_raw = s.get("latest_heard") or s.get("last_heard")
+            # the summary's rounded dates: its last call settles the window
+            if window != "today" and not _after(last_raw, since):
+                continue
+            hourly = s.get("hourly_counts")
+            last_at = _local_iso(last_raw)
+            if not last_at and today and _hhmm(last_raw):
+                last_at = f"{today}T{str(last_raw)[-8:]}"
+            species.append(
+                {
+                    "name": str(s["common_name"]),
+                    "sci": str(s.get("scientific_name") or ""),
+                    "count": int(s.get("count") or 0),
+                    "hourly": [int(h or 0) for h in hourly][:24]
+                    if isinstance(hourly, list)
+                    else [],
+                    "first": _hhmm(s.get("first_heard")),
+                    "last": _hhmm(last_raw),
+                    "last_at": last_at,
+                    "conf": round(float(s.get("max_confidence") or 0), 2),
+                    "new": bool(s.get("is_new_species")),
+                    "thumb": str(s.get("thumbnail_url") or ""),
+                }
+            )
+
+    if feed_rows is not None:
+        recent_raw: Any = feed_rows[:20]
+    else:
+        recent_raw, _rerr = _json(f"{base}/api/v2/detections/recent?limit=20", token)
     recent = []
     for d in recent_raw if isinstance(recent_raw, list) else []:
         if not isinstance(d, dict) or not d.get("commonName"):
@@ -1161,8 +1400,41 @@ POSES = {
     "flight": "in flight with its wings spread, seen from the side a little below, the whole bird",
 }
 CLUSTER_POSES = ("perched", "mixed")
-# What the page covers: to-day, or the last seven days (no hours in that case).
-WINDOWS = ("today", "week")
+# What the page covers: to-day (BirdNET-Go's day as it fills), the last seven
+# days, or Fugleramme's rolling windows, in hours ("0" for all time).
+WINDOWS = ("today", "0.25", "0.5", "1", "3", "6", "12", "72", "week", "720", "0")
+# How each window is said on the page ("heard ...", "calls ...").
+PERIODS = {
+    "today": "to-day",
+    "0.25": "in the last 15 minutes",
+    "0.5": "in the last 30 minutes",
+    "1": "in the last hour",
+    "3": "in the last 3 hours",
+    "6": "in the last 6 hours",
+    "12": "in the last 12 hours",
+    "72": "in the last 3 days",
+    "week": "this week",
+    "720": "in the last 30 days",
+    "0": "since records began",
+}
+# The windows shorter than a day, counted off the detections feed as
+# Fugleramme does (so their hours are known), and how many detections back
+# the feed is read.
+SUB_DAY = ("0.25", "0.5", "1", "3", "6", "12")
+FEED_SCAN = 1000
+# Which birds a cluster (or a list) keeps when more were heard than fit:
+# Fugleramme's four rankings. "order" keeps a list's own order.
+RANKINGS = ("heard", "rarest", "rarest_ever", "last_heard")
+PICKS = ("order", *RANKINGS)
+# The spotlit bird: its longest side as a share of the page's short side,
+# the bare paper kept round it (of its own size) and its label's size against
+# the others', as Fugleramme's collage has them.
+SPOTLIGHT_SHARE = 0.6
+SPOTLIGHT_GAP = 0.05
+SPOTLIGHT_LABEL = 1.5
+# The looks a spotlight fits: the wreath keeps its middle for the title and
+# the drawer has a compartment for each bird.
+SPOTLIGHT_MODES = ("sheet", "numbered", "notebook")
 # Most birds the blended cluster shows (the specimen sheet takes more).
 CLUSTER_MAX = 6
 # The cluster as a specimen sheet (each bird printed as painted) or blended
@@ -1910,13 +2182,16 @@ def _specimen_sheet(
     arrange: str = "auto",
     sizing: str = "true",
     poses: str = "perched",
+    spot: str | None = None,
 ) -> tuple[dict[str, Any] | None, list[str]]:
-    """The cluster as a printed page: today's busiest birds cut out and laid
-    out together. With an AI picture option each bird is its own AI
+    """The cluster as a printed page: the window's birds cut out and laid
+    out together, ``spot`` (a bird's name) large in the middle when given. With an AI picture option each bird is its own AI
     painting (one new one per refresh); with classic plates it is cut from
     the bird's plate, with no fal at all, and birds without a plate wait
     (or use a painting kept from before). None until a bird has a source."""
     birds = [dict(b) for b in sorted(species, key=lambda s: -s["count"])[:n]]
+    for b in birds:
+        b["spot"] = bool(spot) and b["name"] == spot and mode in SPOTLIGHT_MODES
     notices: list[str] = []
     ai = pictures in ("plate_gen", "gen")
     folder = _gen_dir(data_dir)
@@ -2024,6 +2299,7 @@ def _specimen_sheet(
                 "last": b.get("last", ""),
                 "new": bool(b.get("new")),
                 "rarity": b.get("rarity", ""),
+                "spot": bool(b.get("spot")),
             }
         )
     return {
@@ -2615,14 +2891,17 @@ def _pack_sheet(
         )
         bird = np.asarray(small) > 40
         # the label's strip under the bird, as wide as the bird or its
-        # longest line, as tall as its lines
+        # longest line, as tall as its lines (half as large again for the
+        # spotlit bird)
         lines = ["00"] if mode == "numbered" else (b.get("lines") or [b["name"]])
-        rows = label_rows * max(1, len(lines)) if lines else 0
+        big = SPOTLIGHT_LABEL if b.get("spot") else 1.0
+        rows = int(label_rows * big) * max(1, len(lines)) if lines else 0
         # the first line is the name in small caps; the rest are smaller italic
         name_w = (
             int(
                 max(len(t) * (0.74 if i == 0 else 0.5) for i, t in enumerate(lines))
                 * label
+                * big
                 * H
                 / cell
             )
@@ -2691,6 +2970,8 @@ def _pack_sheet(
         for _ in range(600):
             moved = False
             for i in range(len(placed) - 1, -1, -1):
+                if pin is not None and i == 0:
+                    continue  # the spotlit bird holds the middle
                 y, x, fp, off, scale = placed[i]
                 fh, fw = fp.shape
                 dx, dy = pull(x, y, fh, fw)
@@ -2714,10 +2995,38 @@ def _pack_sheet(
             if not moved:
                 break
 
+    # the spotlit bird first: a fixed share of the page, its own middle on
+    # the page's, bare paper kept round it; the rest are packed round it
+    pin = None
+    if birds and birds[0].get("spot") and mode in SPOTLIGHT_MODES:
+        b0 = birds[0]
+        dim = SPOTLIGHT_SHARE * min(W * (0.96 - left), H * (0.93 - top))
+        s0 = dim / max(b0["mask"].size)
+        fp0, off0 = footprint(b0, s0)
+        g = max(1, round(dim * SPOTLIGHT_GAP / cell))
+        th0 = max(1, int(b0["mask"].height * s0 / cell))
+        body = fp0[:th0]
+        bys, bxs = np.nonzero(body)
+        bcx = float(bxs.mean()) if bxs.size else fp0.shape[1] / 2
+        bcy = float(bys.mean()) if bys.size else th0 / 2
+        fp0 = _dilated(np.pad(fp0, g), g)
+        fh0, fw0 = fp0.shape
+        px = int(round(gw / 2 - (g + bcx)))
+        py = int(round(gh / 2 - (g + bcy)))
+        px = min(max(0, px), max(0, gw - fw0))
+        py = min(max(0, py), max(0, gh - fh0))
+        if fh0 < gh and fw0 < gw:
+            pin = (py, px, fp0, off0 + g, s0, g)
+
     def attempt(unit: float) -> list[tuple[int, int, float]] | None:
         occ = np.zeros((gh, gw), dtype=bool)
         placed: list[Any] = []
-        for b in birds:
+        if pin is not None:
+            py0, px0, fpp, offp, sp, gp = pin
+            occ[py0 : py0 + fpp.shape[0], px0 : px0 + fpp.shape[1]] |= fpp
+            # stored at the bird's own corner; its footprint keeps the gap
+            placed.append((py0, px0, fpp, offp, sp))
+        for b in birds[1:] if pin is not None else birds:
             scale = unit * b["factor"]
             fp, off = footprint(b, scale)
             fh, fw = fp.shape
@@ -2744,10 +3053,18 @@ def _pack_sheet(
             # close up after each bird, so the next finds room nearer the middle
             if arrange != "scatter":
                 compact(occ, placed)
-        return [((x + off) * cell, y * cell, scale) for y, x, _fp, off, scale in placed]
+        out = [((x + off) * cell, y * cell, scale) for y, x, _fp, off, scale in placed]
+        if pin is not None:
+            # the gap sits above the spotlit bird too
+            x_, y_, s_ = out[0]
+            out[0] = (x_, y_ + pin[5] * cell, s_)
+        return out
 
-    area = sum((b["mask"].width * b["mask"].height) * b["factor"] ** 2 for b in birds)
+    rest = birds[1:] if pin is not None else birds
+    area = sum((b["mask"].width * b["mask"].height) * b["factor"] ** 2 for b in rest)
     room = float(inside.sum()) * cell * cell
+    if pin is not None:
+        room = max(room * 0.2, room - float(pin[2].sum()) * cell * cell)
     unit = ((0.5 * room) / max(1, area)) ** 0.5
     best = None
     for _ in range(12):  # shrink until everything fits
@@ -2842,13 +3159,25 @@ def _pack_fugleramme(
         return int(w * fpx) + 4, int(np.ceil(1.15 * len(lines) * fpx))
 
     boxes = [label_box(b) for b in birds]
+    # the spotlit bird comes first: held in the middle at a fixed share of
+    # the page, its label half as large again, bare paper kept round it
+    pinned = bool(birds) and bool(birds[0].get("spot")) and mode in SPOTLIGHT_MODES
+    if pinned:
+        lw0, lh0 = boxes[0]
+        boxes[0] = (int(lw0 * SPOTLIGHT_LABEL), int(np.ceil(lh0 * SPOTLIGHT_LABEL)))
 
     class Sprite:
         def __init__(
-            self, i: int, scale: float, mask: Any, art_x: int, lab: tuple[int, int]
+            self,
+            i: int,
+            scale: float,
+            mask: Any,
+            art_x: int,
+            lab: tuple[int, int],
+            art_y: int = 0,
         ) -> None:
             self.i, self.scale, self.mask = i, scale, mask
-            self.art_x, self.lab = art_x, lab
+            self.art_x, self.lab, self.art_y = art_x, lab, art_y
 
     def sprite(i: int, scale: float) -> Sprite:
         b = birds[i]
@@ -2884,15 +3213,47 @@ def _pack_fugleramme(
 
     # fugleramme's base size: the set's bounding squares at 1.5 times the
     # page, capped so no bird takes more than 70% of its short side
-    reach = [b["factor"] * max(b["mask"].size) for b in birds]
+    rest = birds[1:] if pinned else birds
+    reach = [b["factor"] * max(b["mask"].size) for b in rest] or [1.0]
     base = min(
         (W * H * 1.5 / max(1e-9, sum(r * r for r in reach))) ** 0.5,
         min(pw, ph) * _FR_MAX_SHARE / max(reach),
     )
+    held = None
+    centre_at = (0, 0)
+    if pinned:
+        dim = SPOTLIGHT_SHARE * min(pw, ph)
+        one = sprite(0, dim / max(birds[0]["mask"].size))
+        g = round(dim * SPOTLIGHT_GAP)
+        art = one.mask
+        held = Sprite(
+            0,
+            one.scale,
+            _dilated(np.pad(art, g), g),
+            one.art_x + g,
+            (one.lab[0] + g, one.lab[1] + g),
+            g,
+        )
+        # the bird's own middle, which goes on the middle of the page
+        m = birds[0]["mask"]
+        small = m.resize(
+            (max(1, int(m.width * one.scale)), max(1, int(m.height * one.scale)))
+        )
+        ys_, xs_ = np.nonzero(np.asarray(small) > 8)
+        cx_ = float(xs_.mean()) if xs_.size else small.width / 2
+        cy_ = float(ys_.mean()) if ys_.size else small.height / 2
+        centre_at = (round(held.art_x + cx_), round(held.art_y + cy_))
 
     def attempt(shrink: float) -> list[tuple[Sprite, int, int]] | None:
-        sprites = [sprite(i, base * shrink * b["factor"]) for i, b in enumerate(birds)]
+        sprites = [
+            held
+            if held is not None and i == 0
+            else sprite(i, base * shrink * b["factor"])
+            for i, b in enumerate(birds)
+        ]
         anchor = None
+        if held is not None:
+            anchor = centre_at
         if mode == "wreath":
             # the wreath's title sits in the middle: hold it clear first
             tw, th = int(W * 0.38), int(label * H * 9)
@@ -2904,6 +3265,8 @@ def _pack_fugleramme(
             return None
         if mode == "wreath":
             return [p for p in placed if p[0].i >= 0]
+        if held is not None:
+            return placed  # the spotlit bird holds the middle: no re-centring
         xs0 = min(x for _, x, _ in placed)
         ys0 = min(y for _, _, y in placed)
         xs1 = max(x + s.mask.shape[1] for s, x, _ in placed)
@@ -2936,7 +3299,7 @@ def _pack_fugleramme(
     anchors: list[tuple[float, float]] = [(0.0, 0.0)] * len(birds)
     for s, x, y in fit:
         lx, ly = s.lab
-        spots[s.i] = (x0 + x + s.art_x, y0 + y, s.scale)
+        spots[s.i] = (x0 + x + s.art_x, y0 + y + s.art_y, s.scale)
         lh = boxes[s.i][1]
         # the client moves a label down 15% of its height: start it there
         anchors[s.i] = (
@@ -2944,6 +3307,22 @@ def _pack_fugleramme(
             round((y0 + y + ly - 0.15 * lh) / H, 4),
         )
     return spots, anchors
+
+
+def _dilated(a: Any, g: int) -> Any:
+    """A boolean mask grown by ``g`` pixels each way (a square), so the paper
+    kept round a bird is reserved with it."""
+    if g <= 0:
+        return a
+    h = a.copy()
+    for k in range(1, g + 1):
+        h[:, k:] |= a[:, :-k]
+        h[:, :-k] |= a[:, k:]
+    v = h.copy()
+    for k in range(1, g + 1):
+        v[k:, :] |= h[:-k, :]
+        v[:-k, :] |= h[k:, :]
+    return v
 
 
 def _drawer_grid(n: int, W: int, H: int) -> list[tuple[int, int, int, int]]:
@@ -3004,6 +3383,7 @@ def _build_sheet(
                         "factor": r.get("factor") or _size_factor(r["sci"], lengths),
                         "rot": _rot_of(r["name"], mode),
                         "lines": r.get("label_room"),
+                        "spot": bool(r.get("spot")) and mode in SPOTLIGHT_MODES,
                     }
                 )
     if not birds:
@@ -3011,6 +3391,8 @@ def _build_sheet(
     W, H = (size, int(size / ratio)) if ratio >= 1 else (int(size * ratio), size)
     # biggest first: in the middle of a plate, on the ring of a wreath
     birds.sort(key=lambda b: -(b["factor"] ** 2) * b["mask"].width * b["mask"].height)
+    # the spotlit bird first: the packers pin the first bird in the middle
+    birds.sort(key=lambda b: not b.get("spot"))
     avg = tuple(sum(b["paper"][i] for b in birds) // len(birds) for i in range(3))
 
     if mode == "drawer":
@@ -3118,6 +3500,7 @@ def _build_sheet(
                 ],
                 "at": [round(ax, 4), round(ay, 4)],
                 "rot": b["rot"],
+                "spot": bool(b.get("spot")),
             }
         )
     out = io.BytesIO()
@@ -3131,6 +3514,7 @@ def _build_sheet(
         "label": label,
         "mode": mode,
         "arrange": arrange,
+        "spot": any(b.get("spot") for b in birds),
     }
     _write(info_path, json.dumps(info).encode())
     with contextlib.suppress(OSError):
@@ -3169,6 +3553,7 @@ def _sheet(
         + "/"
         + "/".join(r.get("label_room") or [])
         + f"/{r.get('factor') or 0:.2f}"
+        + ("/spot" if r.get("spot") else "")
         for r in rows
     )
     tag = hashlib.sha1(
@@ -3206,6 +3591,7 @@ def _sheet(
                     and abs(float(old.get("label") or 0) - label) < 1e-4
                     and old.get("mode", "sheet") == mode
                     and old.get("arrange", "auto") == arrange
+                    and bool(old.get("spot")) == any(r.get("spot") for r in rows)
                     and f.with_suffix(".jpg").exists()
                 ):
                     older.append((f.stat().st_mtime, f, old))
@@ -3724,6 +4110,10 @@ def _fetch(
     cluster_text = _choice(options.get("cluster_text"), CLUSTER_TEXTS)
     cluster_poses = _choice(options.get("cluster_poses"), CLUSTER_POSES)
     window = _choice(options.get("window"), WINDOWS)
+    if layout in ("chart", "chorus"):
+        window = "today"  # the day chart and the dawn chorus are the day's hours
+    ranking = _choice(options.get("ranking"), RANKINGS)
+    pick = _choice(options.get("pick"), PICKS)
     text_scale = int(_choice(options.get("cluster_text_scale"), TEXT_SCALES)) / 100
     footer = _choice(options.get("footer"), FOOTERS)
     cluster_sizing = _choice(options.get("cluster_sizing"), SIZINGS)
@@ -3743,6 +4133,11 @@ def _fetch(
     if not name_place.isdigit():
         name_place = ""
     song_line = options.get("song_line", True) is not False
+    spotlight = (
+        options.get("spotlight") is True
+        and cluster_style in SPOTLIGHT_MODES
+        and cluster_arrange != "fal"
+    )
     cluster_n = _int(
         options.get("cluster_size"),
         4 if cluster_style == "blend" else 12,
@@ -3778,7 +4173,7 @@ def _fetch(
                 raw = json.loads(cache.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raw, err = _from_birdnet(
-                base, token, min_conf, window, now.strftime("%Y-%m-%d")
+                base, token, min_conf, window, now.strftime("%Y-%m-%d"), now
             )
             if err or raw is None:
                 return {
@@ -3789,11 +4184,35 @@ def _fetch(
                 cache.write_text(json.dumps(raw), encoding="utf-8")
 
     species = [dict(s) for s in raw.get("species", [])]
+    today_iso = now.strftime("%Y-%m-%d")
     if window == "week" and not base:
         # the demo garden's week: a few days' worth of the day's calls
         for s_ in species:
             s_["count"] = s_["count"] * (4 + len(s_["name"]) % 3)
-    rarity = _rarity(data_dir, species, now.strftime("%Y-%m-%d")) if species else {}
+    elif window in SUB_DAY and not base:
+        # the demo garden's last hours: the calls in the hours they touch
+        back = max(1, int(-(-float(window) // 1)))
+        for s_ in species:
+            hourly = [
+                n if now.hour - back < h <= now.hour else 0
+                for h, n in enumerate(s_.get("hourly") or [])
+            ]
+            s_["hourly"], s_["count"] = hourly, sum(hourly)
+        species = [s_ for s_ in species if s_["count"]]
+    elif window in ("72", "720", "0") and not base:
+        # the demo garden's longer windows: more days' worth of the day's calls
+        days = {"72": 2, "720": 20, "0": 40}[window]
+        for s_ in species:
+            s_["count"] = s_["count"] * (days + len(s_["name"]) % 3)
+    for s_ in species:
+        if not s_.get("last_at") and s_.get("last"):
+            s_["last_at"] = f"{today_iso}T{s_['last']}:00"
+    # only the birds whose last call was to-day are logged as heard to-day
+    heard_today = [s_ for s_ in species if _last_key(s_)[:10] in ("", today_iso)]
+    rarity = _rarity(data_dir, species, today_iso, heard_today) if species else {}
+    ever, log_start = _days_heard(data_dir) if species else ({}, "")
+    for s_ in species:
+        s_["days_ever"] = len(ever.get(s_.get("sci") or s_["name"], []))
     for s_ in species:
         s_["rarity"], s_["rarity_share"], s_["returning"] = rarity.get(
             s_.get("sci") or s_["name"], ("", 0.0, "")
@@ -3815,33 +4234,40 @@ def _fetch(
         elif quiet_for >= 90:
             asleep = {"quiet_min": quiet_for}
     if sort == "count":
-        species.sort(key=lambda s: (-s["count"], -(_minutes(s["last"]) or 0)))
+        species.sort(key=lambda s: (-s["count"], _neg(_last_key(s))))
     else:
-        species.sort(key=lambda s: (-(_minutes(s["last"]) or 0), -s["count"]))
+        species.sort(key=lambda s: (_neg(_last_key(s)), -s["count"]))
+    period = PERIODS[window]
     # the chorus is the whole day's arrivals, not the first few
-    shown = species[: (SHEET_MAX if layout == "chorus" else want)]
-    latest = (
-        dict(max(species, key=lambda s: _minutes(s["last"]) or 0)) if species else None
-    )
+    if layout == "chorus":
+        shown = species[:SHEET_MAX]
+    elif pick != "order" and len(species) > want:
+        # which birds, by Fugleramme's rankings, still shown in the order
+        kept = {s["name"] for s in _ranked(species, pick, want, ever)}
+        shown = [s for s in species if s["name"] in kept]
+    else:
+        shown = species[:want]
+    newest = dict(max(species, key=_last_key)) if species else None
+    latest = newest
     hero_kick = ""
     if species and hero != "latest":
-        pick = {
+        chosen = {
             "rare": min(
                 species, key=lambda s: (s.get("rarity_share") or 0, -s["count"])
             ),
             "busy": max(species, key=lambda s: s["count"]),
             "quiet": min(species, key=lambda s: s["count"]),
-            "new": next(
-                (s for s in species if s.get("new") or s.get("returning")), None
-            ),
+            "new": _arrival(species, ever, log_start, window, now),
         }.get(hero)
-        if pick is not None:
-            latest = dict(pick)
+        if chosen is not None:
+            latest = dict(chosen)
             hero_kick = {
-                "rare": "Rarest to-day",
-                "busy": "Most calls to-day",
-                "quiet": "Fewest calls to-day",
-                "new": "New to-day" if pick.get("new") else "Returned to-day",
+                "rare": f"Rarest {period}",
+                "busy": f"Most calls {period}",
+                "quiet": f"Fewest calls {period}",
+                "new": f"New {period}"
+                if chosen.get("new") or not chosen.get("returning")
+                else f"Returned {period}",
             }[hero]
     if latest:
         # which bird of the day this was, by first heard: the folio's plate number
@@ -3905,13 +4331,32 @@ def _fetch(
     elif layout == "cluster" and species:
         # names at least about 13 px tall on the panel itself
         label_size = max(SHEET_LABEL, 13 / ch) if ch else SHEET_LABEL
+        # which birds, when more were heard than fit, the spotlit (latest
+        # heard) bird first
+        lead = newest["name"] if spotlight and newest else None
+        # as Fugleramme does, a bird the page cannot draw yet (classic plates
+        # alone, and no plate or kept painting) does not take a place
+        drawable = species
+        if pictures == "plate_photo" and cluster_style != "blend":
+            pack = _pack()
+            folder = _gen_dir(data_dir)
+            drawable = [
+                s
+                for s in species
+                if pack.get(s["sci"])
+                or (folder / f"{_slug(s['sci'] or s['name'])}--plate.jpg").exists()
+                or (
+                    folder / f"{_pkey(_slug(s['sci'] or s['name']), art_style)}.jpg"
+                ).exists()
+            ] or species
+        pool = _ranked(drawable, ranking, cluster_n, ever, lead)
         if cluster_style != "blend" and pictures in ("plate_gen", "gen", "plate_photo"):
             ratio = cw / ch if cw and ch else 4 / 3
             if cluster_style == "numbered" and cluster_text == "key":
                 # the numbered plate shares the cell with its key
                 ratio = ratio * 0.64 / 0.92 if ratio >= 1 else ratio * 0.92 / 0.62
             cluster, notices = _specimen_sheet(
-                species,
+                pool,
                 cluster_n,
                 art_style,
                 ratio,
@@ -3925,10 +4370,11 @@ def _fetch(
                 cluster_arrange,
                 cluster_sizing,
                 poses=cluster_poses,
+                spot=lead,
             )
         if cluster is None:
             cluster, more = _cluster(
-                species,
+                _ranked(species, ranking, min(cluster_n, CLUSTER_MAX), ever),
                 min(cluster_n, CLUSTER_MAX),
                 cluster_every,
                 pictures if cluster_style == "blend" else "plate_photo",
@@ -3953,7 +4399,7 @@ def _fetch(
             hourly_total[h] += n
     for s in [*shown, *([latest] if latest else [])]:
         s.pop("thumb", None)
-        s["ago_min"] = _ago_min(s.get("last", ""), now)
+        s["ago_min"] = _ago_min(s.get("last", ""), now, s.get("last_at", ""))
 
     # every page is printed matter now: the engraved faces go with all of
     # them, the full-bleed captions add their own, the notebook its hand
@@ -4009,7 +4455,11 @@ def _fetch(
         "date": now.strftime("%a %d %b"),
         "date_iso": now.strftime("%Y-%m-%d"),
         "window": window,
-        "period": "this week" if window == "week" else "to-day",
+        "period": period,
+        # the hour-by-hour strips: the day's hours, or a sub-day window's
+        "strips": window == "today" or window in SUB_DAY,
+        "ranking": ranking,
+        "pick": pick,
         "atlas": atlas,
         "credits": credits,
         # what needs the owner (no key, a failure) is printed on the panel;

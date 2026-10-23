@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "kind": "widget",
   "render": {
     "warm_ahead_s": 150
@@ -66,19 +66,6 @@
       "help": "Where BirdNET-Go's web page opens, for example http://birdnet.local:8080. Leave empty for a demo garden based on this cell's location."
     },
     {
-      "name": "token",
-      "type": "string",
-      "label": "BirdNET-Go bearer token (normally blank)",
-      "default": "",
-      "secret": true,
-      "show_if": {
-        "url": {
-          "not": ""
-        }
-      },
-      "help": "BirdNET-Go's reads need no login, even with Basic Authentication on. Fill this only for a reverse proxy or build that wants a bearer token."
-    },
-    {
       "name": "layout",
       "type": "select",
       "label": "Layout",
@@ -125,9 +112,9 @@
     {
       "name": "window",
       "type": "select",
-      "label": "Period",
+      "label": "Window",
       "default": "today",
-      "help": "To-day is BirdNET-Go's day as it fills. This week is the last seven days together, from BirdNET-Go's species summary, which has no hours, so the hour strips and the chart go quiet.",
+      "help": "Today is BirdNET-Go's day as it fills. The windows shorter than a day are counted off BirdNET-Go's latest detections, as Fugleramme counts them, so their hours show; the longer ones come from its species summary, which has no hours, so the hour strips go quiet. The day chart and the dawn chorus always show today.",
       "show_if": {
         "layout": [
           "list",
@@ -140,19 +127,130 @@
       },
       "choices": [
         {
+          "value": "0.25",
+          "label": "Last 15 minutes"
+        },
+        {
+          "value": "0.5",
+          "label": "Last 30 minutes"
+        },
+        {
+          "value": "1",
+          "label": "Last hour"
+        },
+        {
+          "value": "3",
+          "label": "Last 3 hours"
+        },
+        {
+          "value": "6",
+          "label": "Last 6 hours"
+        },
+        {
+          "value": "12",
+          "label": "Last 12 hours"
+        },
+        {
           "value": "today",
-          "label": "To-day"
+          "label": "Today"
+        },
+        {
+          "value": "72",
+          "label": "Last 3 days"
         },
         {
           "value": "week",
-          "label": "This week"
+          "label": "Last week"
+        },
+        {
+          "value": "720",
+          "label": "Last 30 days"
+        },
+        {
+          "value": "0",
+          "label": "All time"
+        }
+      ]
+    },
+    {
+      "name": "count",
+      "type": "select",
+      "label": "How many",
+      "default": "6",
+      "choices": [
+        {
+          "value": "4",
+          "label": "4"
+        },
+        {
+          "value": "6",
+          "label": "6"
+        },
+        {
+          "value": "8",
+          "label": "8"
+        },
+        {
+          "value": "10",
+          "label": "10"
+        },
+        {
+          "value": "12",
+          "label": "12"
+        }
+      ],
+      "show_if": {
+        "layout": [
+          "list",
+          "latest",
+          "gallery",
+          "chart",
+          "plate"
+        ]
+      }
+    },
+    {
+      "name": "pick",
+      "type": "select",
+      "label": "Which birds, when there are more",
+      "default": "order",
+      "show_if": {
+        "layout": [
+          "list",
+          "latest",
+          "gallery",
+          "chart",
+          "plate"
+        ]
+      },
+      "help": "The birds the page keeps when more were heard than it shows. As ordered keeps the first ones in the order (More options); the others are Fugleramme's rankings, and the birds kept are still shown in the order.",
+      "choices": [
+        {
+          "value": "order",
+          "label": "As ordered"
+        },
+        {
+          "value": "heard",
+          "label": "The most heard"
+        },
+        {
+          "value": "rarest",
+          "label": "The rarest in the window"
+        },
+        {
+          "value": "rarest_ever",
+          "label": "The rarest all time"
+        },
+        {
+          "value": "last_heard",
+          "label": "The latest heard"
         }
       ]
     },
     {
       "name": "caption",
       "type": "select",
-      "label": "Full bleed: caption style",
+      "label": "Caption",
       "default": "band",
       "show_if": {
         "layout": "bleed"
@@ -220,29 +318,29 @@
     {
       "name": "hero",
       "type": "select",
-      "label": "Which bird (single-bird layouts)",
+      "label": "Which bird",
       "default": "latest",
-      "help": "The bird the latest visitor, book plate and full bleed layouts show. Rarest uses the widget's own log of the days each bird was heard here; newest takes a bird BirdNET-Go flags as new, or one back after a long absence, and otherwise the latest.",
+      "help": "The bird the field log, latest visitor, book plate and full bleed layouts show, from the window's birds. The newest arrival is a bird BirdNET-Go flags as new, one back after a long absence, or over a longer window the bird the widget's log of the garden met latest; the rarest uses that log of the days each bird was heard here.",
       "choices": [
         {
           "value": "latest",
-          "label": "The bird just heard"
-        },
-        {
-          "value": "rare",
-          "label": "The rarest heard to-day"
-        },
-        {
-          "value": "busy",
-          "label": "The one with most calls"
-        },
-        {
-          "value": "quiet",
-          "label": "The one with fewest calls"
+          "label": "The latest heard"
         },
         {
           "value": "new",
-          "label": "A new or returning species"
+          "label": "The newest arrival"
+        },
+        {
+          "value": "busy",
+          "label": "The most heard"
+        },
+        {
+          "value": "rare",
+          "label": "The rarest"
+        },
+        {
+          "value": "quiet",
+          "label": "The least heard"
         }
       ],
       "show_if": {
@@ -257,7 +355,7 @@
     {
       "name": "song_line",
       "type": "boolean",
-      "label": "Draw the bird's song line",
+      "label": "Song line",
       "default": true,
       "help": "A small line under the bird's name tracing its latest call, from BirdNET-Go's sonogram of the detection (a made-up one in the demo garden).",
       "show_if": {
@@ -268,6 +366,224 @@
           "bleed"
         ]
       }
+    },
+    {
+      "name": "cluster_style",
+      "type": "select",
+      "label": "Style",
+      "default": "sheet",
+      "show_if": {
+        "layout": "cluster",
+        "cluster_arrange": {
+          "not": "fal"
+        }
+      },
+      "help": "How the printed page looks: a specimen sheet named underneath, a numbered plate with a key, a wreath round a title, a field notebook with taped-in birds, or a specimen drawer with museum tags. With classic plates the birds are cut from the plates, no fal.ai needed; with an AI option from each bird's own painting. Not used when the arrangement is fal.ai.",
+      "choices": [
+        {
+          "value": "sheet",
+          "label": "Specimen sheet"
+        },
+        {
+          "value": "numbered",
+          "label": "Numbered plate with a key"
+        },
+        {
+          "value": "wreath",
+          "label": "Wreath round a title"
+        },
+        {
+          "value": "notebook",
+          "label": "Field notebook"
+        },
+        {
+          "value": "drawer",
+          "label": "Specimen drawer"
+        }
+      ]
+    },
+    {
+      "name": "cluster_size",
+      "type": "select",
+      "label": "How many",
+      "default": "8",
+      "show_if": {
+        "layout": "cluster"
+      },
+      "help": "How many of the window's birds the cluster shows. A blended scene takes at most 6.",
+      "choices": [
+        {
+          "value": "2",
+          "label": "2"
+        },
+        {
+          "value": "3",
+          "label": "3"
+        },
+        {
+          "value": "4",
+          "label": "4"
+        },
+        {
+          "value": "5",
+          "label": "5"
+        },
+        {
+          "value": "6",
+          "label": "6"
+        },
+        {
+          "value": "8",
+          "label": "8"
+        },
+        {
+          "value": "10",
+          "label": "10"
+        },
+        {
+          "value": "12",
+          "label": "12"
+        },
+        {
+          "value": "16",
+          "label": "16"
+        },
+        {
+          "value": "20",
+          "label": "20"
+        },
+        {
+          "value": "24",
+          "label": "24"
+        }
+      ]
+    },
+    {
+      "name": "ranking",
+      "type": "select",
+      "label": "Which birds, when there are more",
+      "default": "heard",
+      "show_if": {
+        "layout": "cluster"
+      },
+      "help": "After Fugleramme: the birds heard most in the window, the ones heard least, the ones the widget's own log of the garden has met on the fewest days, or the latest heard.",
+      "choices": [
+        {
+          "value": "heard",
+          "label": "The most heard"
+        },
+        {
+          "value": "rarest",
+          "label": "The rarest in the window"
+        },
+        {
+          "value": "rarest_ever",
+          "label": "The rarest all time"
+        },
+        {
+          "value": "last_heard",
+          "label": "The latest heard"
+        }
+      ]
+    },
+    {
+      "name": "cluster_arrange",
+      "type": "select",
+      "label": "Arrangement",
+      "default": "auto",
+      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the drawer always uses its compartments. Spiral and Voids pack the birds by their outlines with Fugleramme's packer, each name tucked under its bird: Spiral grows out from the middle with the biggest birds there, Voids puts each bird on the emptiest paper and fills the page. fal.ai composes the scene repaints up to six birds together as one picture, about US$0.04 a time, and takes the scene options below.",
+      "choices": [
+        {
+          "value": "auto",
+          "label": "The look's own"
+        },
+        {
+          "value": "oval",
+          "label": "Oval, biggest in the middle"
+        },
+        {
+          "value": "circle",
+          "label": "Circle"
+        },
+        {
+          "value": "ring",
+          "label": "Ring round an empty middle"
+        },
+        {
+          "value": "rows",
+          "label": "Rows, top left first"
+        },
+        {
+          "value": "scatter",
+          "label": "Scattered"
+        },
+        {
+          "value": "heap",
+          "label": "Heap, biggest at the bottom"
+        },
+        {
+          "value": "spiral",
+          "label": "Spiral (Fugleramme)"
+        },
+        {
+          "value": "voids",
+          "label": "Voids (Fugleramme)"
+        },
+        {
+          "value": "fal",
+          "label": "fal.ai composes the scene (one more AI pass)"
+        }
+      ],
+      "show_if": {
+        "layout": "cluster"
+      }
+    },
+    {
+      "name": "spotlight",
+      "type": "boolean",
+      "label": "Spotlight the latest bird",
+      "default": false,
+      "show_if": {
+        "layout": "cluster",
+        "pictures": [
+          "plate_photo",
+          "plate_gen",
+          "gen"
+        ],
+        "cluster_arrange": {
+          "not": "fal"
+        },
+        "cluster_style": [
+          "sheet",
+          "numbered",
+          "notebook"
+        ]
+      },
+      "help": "After Fugleramme: the bird heard last is drawn large in the middle, its name larger, with the rest packed round it. For the specimen sheet, the numbered plate and the field notebook."
+    },
+    {
+      "name": "cluster_text",
+      "type": "select",
+      "label": "Text",
+      "default": "key",
+      "show_if": {
+        "layout": "cluster"
+      },
+      "help": "Everything is the title and key beside or below the picture plus the text under each bird; under each bird alone drops the title and key; none is the picture alone.",
+      "choices": [
+        {
+          "value": "key",
+          "label": "Title, key and the text under each bird"
+        },
+        {
+          "value": "under",
+          "label": "Only the text under each bird"
+        },
+        {
+          "value": "none",
+          "label": "None, the picture alone"
+        }
+      ]
     },
     {
       "name": "pictures",
@@ -309,6 +625,9 @@
       "label": "Photo colour",
       "default": "toned",
       "show_if": {
+        "layout": {
+          "not": "chart"
+        },
         "pictures": [
           "plate_photo",
           "plate_gen"
@@ -333,9 +652,12 @@
     {
       "name": "art_style",
       "type": "select",
-      "label": "Art style (AI paintings)",
+      "label": "Art style",
       "default": "gould",
       "show_if": {
+        "layout": {
+          "not": "chart"
+        },
         "pictures": [
           "plate_gen",
           "gen"
@@ -593,6 +915,9 @@
       "placeholder": "an Art Nouveau illustration with sinuous flowing lines, a muted palette of sage, ochre and dusty rose, and a border of curling leaves and lilies, on plain cream paper",
       "help": "Describe the medium and the look, as the example does; the widget adds the bird, its reference photo and the plain background. Each wording keeps its own paintings, so a changed prompt paints afresh and the old ones wait on the paintings page. Blank uses the example.",
       "show_if": {
+        "layout": {
+          "not": "chart"
+        },
         "pictures": [
           "plate_gen",
           "gen"
@@ -601,152 +926,48 @@
       }
     },
     {
-      "name": "cluster_style",
+      "name": "panel",
       "type": "select",
-      "label": "Cluster: style",
-      "default": "sheet",
-      "show_if": {
-        "layout": "cluster",
-        "cluster_arrange": {
-          "not": "fal"
-        }
-      },
-      "help": "How the printed page looks: a specimen sheet named underneath, a numbered plate with a key, a wreath round a title, a field notebook with taped-in birds, or a specimen drawer with museum tags. With classic plates the birds are cut from the plates, no fal.ai needed; with an AI option from each bird's own painting. Not used when the arrangement is fal.ai.",
+      "label": "Panel",
+      "default": "colour",
+      "help": "What the panel can show. Pictures are converted and contrast-stretched to match, the chart's heat scale snaps to the panel's steps, and on black and white the tones become patterns and the highlights become frames.",
       "choices": [
         {
-          "value": "sheet",
-          "label": "Specimen sheet"
+          "value": "colour",
+          "label": "Colour"
         },
         {
-          "value": "numbered",
-          "label": "Numbered plate with a key"
+          "value": "gray16",
+          "label": "16 greys"
         },
         {
-          "value": "wreath",
-          "label": "Wreath round a title"
+          "value": "gray4",
+          "label": "4 greys"
         },
         {
-          "value": "notebook",
-          "label": "Field notebook"
-        },
-        {
-          "value": "drawer",
-          "label": "Specimen drawer"
+          "value": "mono",
+          "label": "Black and white"
         }
       ]
     },
     {
-      "name": "cluster_size",
-      "type": "select",
-      "label": "Cluster: how many birds",
-      "default": "8",
+      "name": "token",
+      "type": "string",
+      "label": "BirdNET-Go token",
+      "default": "",
+      "secret": true,
       "show_if": {
-        "layout": "cluster"
+        "url": {
+          "not": ""
+        }
       },
-      "help": "Only used by the cluster layout: how many of today's busiest birds it shows. A blended scene takes at most 6.",
-      "choices": [
-        {
-          "value": "2",
-          "label": "2"
-        },
-        {
-          "value": "3",
-          "label": "3"
-        },
-        {
-          "value": "4",
-          "label": "4"
-        },
-        {
-          "value": "5",
-          "label": "5"
-        },
-        {
-          "value": "6",
-          "label": "6"
-        },
-        {
-          "value": "8",
-          "label": "8"
-        },
-        {
-          "value": "10",
-          "label": "10"
-        },
-        {
-          "value": "12",
-          "label": "12"
-        },
-        {
-          "value": "16",
-          "label": "16"
-        },
-        {
-          "value": "20",
-          "label": "20"
-        },
-        {
-          "value": "24",
-          "label": "24"
-        }
-      ]
-    },
-    {
-      "name": "cluster_arrange",
-      "type": "select",
-      "label": "Cluster: arrangement",
-      "default": "auto",
-      "help": "Where the birds go on the page. Each look has its own (an oval for the sheet and numbered plate, a ring for the wreath, rows for the notebook); the drawer always uses its compartments. Spiral and Voids pack the birds by their outlines with Fugleramme's packer, each name tucked under its bird: Spiral grows out from the middle with the biggest birds there, Voids puts each bird on the emptiest paper and fills the page. fal.ai composes the scene repaints up to six birds together as one picture, about US$0.04 a time, and takes the scene options below.",
-      "choices": [
-        {
-          "value": "auto",
-          "label": "The look's own"
-        },
-        {
-          "value": "oval",
-          "label": "Oval, biggest in the middle"
-        },
-        {
-          "value": "circle",
-          "label": "Circle"
-        },
-        {
-          "value": "ring",
-          "label": "Ring round an empty middle"
-        },
-        {
-          "value": "rows",
-          "label": "Rows, top left first"
-        },
-        {
-          "value": "scatter",
-          "label": "Scattered"
-        },
-        {
-          "value": "heap",
-          "label": "Heap, biggest at the bottom"
-        },
-        {
-          "value": "spiral",
-          "label": "Spiral (Fugleramme)"
-        },
-        {
-          "value": "voids",
-          "label": "Voids (Fugleramme)"
-        },
-        {
-          "value": "fal",
-          "label": "fal.ai composes the scene (one more AI pass)"
-        }
-      ],
-      "show_if": {
-        "layout": "cluster"
-      }
+      "help": "BirdNET-Go's reads need no login, even with Basic Authentication on. Fill this only for a reverse proxy or build that wants a bearer token.",
+      "advanced": true
     },
     {
       "name": "cluster_sizing",
       "type": "select",
-      "label": "Cluster: bird size",
+      "label": "Bird size",
       "default": "true",
       "help": "True size uses a table of body lengths, so a crow is bigger than a wren. Rarest biggest uses the widget's own log of the days each bird was heard in your garden; it settles after about a week.",
       "choices": [
@@ -772,36 +993,13 @@
         "cluster_arrange": {
           "not": "fal"
         }
-      }
-    },
-    {
-      "name": "cluster_text",
-      "type": "select",
-      "label": "Cluster: text",
-      "default": "key",
-      "show_if": {
-        "layout": "cluster"
       },
-      "help": "Everything is the title and key beside or below the picture plus the text under each bird; under each bird alone drops the title and key; none is the picture alone.",
-      "choices": [
-        {
-          "value": "key",
-          "label": "Title, key and the text under each bird"
-        },
-        {
-          "value": "under",
-          "label": "Only the text under each bird"
-        },
-        {
-          "value": "none",
-          "label": "None, the picture alone"
-        }
-      ]
+      "advanced": true
     },
     {
       "name": "cluster_text_scale",
       "type": "select",
-      "label": "Cluster: text size",
+      "label": "Text size",
       "default": "100",
       "show_if": {
         "layout": "cluster",
@@ -830,12 +1028,13 @@
           "value": "150",
           "label": "150%"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "cluster_labels",
       "type": "multiselect",
-      "label": "Cluster: text under each bird",
+      "label": "Text under each bird",
       "default": [
         "name"
       ],
@@ -871,12 +1070,13 @@
         "cluster_text": {
           "not": "none"
         }
-      }
+      },
+      "advanced": true
     },
     {
       "name": "cluster_poses",
       "type": "select",
-      "label": "Cluster: poses (AI paintings)",
+      "label": "Poses",
       "default": "perched",
       "help": "Perched paints every bird on a branch. Mixed paints every other bird in flight, so a page is not eight profiles on branches; each pose is its own painting, so mixed paints more the first time.",
       "show_if": {
@@ -895,12 +1095,13 @@
           "value": "mixed",
           "label": "Mixed: every other bird in flight"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "cluster_scene",
       "type": "select",
-      "label": "Cluster: scene (fal.ai)",
+      "label": "Scene",
       "default": "auto",
       "help": "Where fal.ai puts the birds when it composes the scene.",
       "choices": [
@@ -948,12 +1149,13 @@
       "show_if": {
         "layout": "cluster",
         "cluster_arrange": "fal"
-      }
+      },
+      "advanced": true
     },
     {
       "name": "cluster_fidelity",
       "type": "select",
-      "label": "Cluster: how free fal.ai is",
+      "label": "How free fal.ai is",
       "default": "exact",
       "help": "Exact keeps each bird's pose and place as painted. Free lets fal.ai re-pose and move the birds to suit the scene; truer to the scene, less true to the paintings.",
       "choices": [
@@ -969,12 +1171,13 @@
       "show_if": {
         "layout": "cluster",
         "cluster_arrange": "fal"
-      }
+      },
+      "advanced": true
     },
     {
       "name": "cluster_every",
       "type": "select",
-      "label": "Cluster: re-compose at most",
+      "label": "Re-compose at most",
       "default": "3",
       "show_if": {
         "layout": "cluster",
@@ -998,12 +1201,13 @@
           "value": "24",
           "label": "At most daily"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "font",
       "type": "select",
-      "label": "Type",
+      "label": "Typeface",
       "default": "classic",
       "help": "The typeface on every page. Classic is the engraved face the plates were set in; the panel's own theme font is the last choice.",
       "choices": [
@@ -1031,7 +1235,8 @@
           "value": "theme",
           "label": "Panel theme"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "night",
@@ -1052,7 +1257,8 @@
           "value": "owls",
           "label": "Only the night's birds after dark"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "names",
@@ -1129,12 +1335,13 @@
           "value": "zh-CN",
           "label": "中文"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "names_place",
       "type": "select",
-      "label": "Bird names: region",
+      "label": "Region",
       "default": "",
       "help": "Prefers the names used in this country, where iNaturalist has them.",
       "choices": [
@@ -1207,32 +1414,20 @@
         "names": {
           "not": "birdnet"
         }
-      }
+      },
+      "advanced": true
     },
     {
-      "name": "panel",
-      "type": "select",
-      "label": "Panel",
-      "default": "colour",
-      "help": "What the panel can show. Pictures are converted and contrast-stretched to match, the chart's heat scale snaps to the panel's steps, and on black and white the tones become patterns and the highlights become frames.",
-      "choices": [
-        {
-          "value": "colour",
-          "label": "Colour"
-        },
-        {
-          "value": "gray16",
-          "label": "16 greys"
-        },
-        {
-          "value": "gray4",
-          "label": "4 greys"
-        },
-        {
-          "value": "mono",
-          "label": "Black and white"
+      "name": "show_sci",
+      "type": "boolean",
+      "label": "Scientific names",
+      "default": true,
+      "show_if": {
+        "layout": {
+          "not": "chart"
         }
-      ]
+      },
+      "advanced": true
     },
     {
       "name": "sort",
@@ -1257,12 +1452,13 @@
           "chart",
           "plate"
         ]
-      }
+      },
+      "advanced": true
     },
     {
       "name": "chart_labels",
       "type": "select",
-      "label": "Chart labels (day chart, field log)",
+      "label": "Chart labels",
       "default": "none",
       "show_if": {
         "layout": [
@@ -1284,44 +1480,8 @@
           "value": "peak",
           "label": "Busiest hour only"
         }
-      ]
-    },
-    {
-      "name": "count",
-      "type": "select",
-      "label": "How many birds",
-      "default": "6",
-      "choices": [
-        {
-          "value": "4",
-          "label": "4"
-        },
-        {
-          "value": "6",
-          "label": "6"
-        },
-        {
-          "value": "8",
-          "label": "8"
-        },
-        {
-          "value": "10",
-          "label": "10"
-        },
-        {
-          "value": "12",
-          "label": "12"
-        }
       ],
-      "show_if": {
-        "layout": [
-          "list",
-          "latest",
-          "gallery",
-          "chart",
-          "plate"
-        ]
-      }
+      "advanced": true
     },
     {
       "name": "min_confidence",
@@ -1355,23 +1515,13 @@
           "value": "90",
           "label": "90%"
         }
-      ]
-    },
-    {
-      "name": "show_sci",
-      "type": "boolean",
-      "label": "Show scientific names",
-      "default": true,
-      "show_if": {
-        "layout": {
-          "not": "chart"
-        }
-      }
+      ],
+      "advanced": true
     },
     {
       "name": "footer",
       "type": "select",
-      "label": "Line at the bottom",
+      "label": "Foot of the page",
       "default": "show",
       "help": "The small line at the foot of the page: where the pictures came from, and anything that needs you (a missing key, a failed painting). Credits only keeps the attributions and drops the status.",
       "choices": [
@@ -1387,20 +1537,23 @@
           "value": "hide",
           "label": "Nothing"
         }
-      ]
+      ],
+      "advanced": true
     },
     {
       "name": "location",
       "type": "location_search",
-      "label": "Location (demo garden and clock)",
-      "help": "Picks the demo garden's birds and the time zone for times shown. Falls back to the app-level location.",
-      "default": ""
+      "label": "Place",
+      "help": "Picks the demo garden's birds and the time zone for times shown, and sunrise and sunset after dark. Falls back to the app-level location.",
+      "default": "",
+      "advanced": true
     },
     {
       "name": "label",
       "type": "string",
       "label": "Garden name",
-      "default": ""
+      "default": "",
+      "advanced": true
     },
     {
       "name": "refresh_min",
@@ -1429,7 +1582,8 @@
         "url": {
           "not": ""
         }
-      }
+      },
+      "advanced": true
     }
   ],
   "data_schema": {

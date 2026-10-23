@@ -1,0 +1,429 @@
+{
+ "url": {
+  "type": "string",
+  "default": "",
+  "values": []
+ },
+ "token": {
+  "type": "string",
+  "default": "",
+  "values": []
+ },
+ "layout": {
+  "type": "select",
+  "default": "list",
+  "values": [
+   "list",
+   "latest",
+   "gallery",
+   "chart",
+   "plate",
+   "bleed",
+   "cluster",
+   "chorus",
+   "atlas"
+  ]
+ },
+ "window": {
+  "type": "select",
+  "default": "today",
+  "values": [
+   "today",
+   "week"
+  ]
+ },
+ "caption": {
+  "type": "select",
+  "default": "band",
+  "values": [
+   "band",
+   "editorial",
+   "notebook",
+   "tag",
+   "poster",
+   "folio",
+   "museum",
+   "figure",
+   "cyanotype",
+   "stamp",
+   "woodblock",
+   "cameo",
+   "nouveau",
+   "sonogram"
+  ]
+ },
+ "hero": {
+  "type": "select",
+  "default": "latest",
+  "values": [
+   "latest",
+   "rare",
+   "busy",
+   "quiet",
+   "new"
+  ]
+ },
+ "song_line": {
+  "type": "boolean",
+  "default": true,
+  "values": []
+ },
+ "pictures": {
+  "type": "select",
+  "default": "plate_photo",
+  "values": [
+   "plate_photo",
+   "plate_gen",
+   "gen",
+   "photo",
+   "none"
+  ]
+ },
+ "photo_tone": {
+  "type": "select",
+  "default": "toned",
+  "values": [
+   "toned",
+   "light",
+   "natural"
+  ]
+ },
+ "art_style": {
+  "type": "select",
+  "default": "gould",
+  "values": [
+   "gould",
+   "audubon",
+   "woodblock",
+   "engraving",
+   "linocut",
+   "sketch",
+   "risograph",
+   "screenprint",
+   "harper",
+   "artnouveau",
+   "mucha",
+   "jugendstil",
+   "glasgow",
+   "secession",
+   "deco",
+   "artsandcrafts",
+   "japonisme",
+   "fairytale",
+   "beardsley",
+   "nouveauglass",
+   "chinoiserie",
+   "persian",
+   "bestiary",
+   "byzantine",
+   "folkart",
+   "delft",
+   "cigarette",
+   "watercolour",
+   "sumie",
+   "pointillism",
+   "charcoal",
+   "origami",
+   "papercut",
+   "embroidery",
+   "felt",
+   "clay",
+   "bricks",
+   "stainedglass",
+   "mosaic",
+   "anime",
+   "kawaii",
+   "pixel",
+   "grumpy",
+   "hats",
+   "superhero",
+   "portrait",
+   "pirate",
+   "custom"
+  ]
+ },
+ "art_prompt": {
+  "type": "textarea",
+  "default": "",
+  "values": []
+ },
+ "cluster_style": {
+  "type": "select",
+  "default": "sheet",
+  "values": [
+   "sheet",
+   "numbered",
+   "wreath",
+   "notebook",
+   "drawer"
+  ]
+ },
+ "cluster_size": {
+  "type": "select",
+  "default": "8",
+  "values": [
+   "2",
+   "3",
+   "4",
+   "5",
+   "6",
+   "8",
+   "10",
+   "12",
+   "16",
+   "20",
+   "24"
+  ]
+ },
+ "cluster_arrange": {
+  "type": "select",
+  "default": "auto",
+  "values": [
+   "auto",
+   "oval",
+   "circle",
+   "ring",
+   "rows",
+   "scatter",
+   "heap",
+   "spiral",
+   "voids",
+   "fal"
+  ]
+ },
+ "cluster_sizing": {
+  "type": "select",
+  "default": "true",
+  "values": [
+   "true",
+   "rare",
+   "busy",
+   "same"
+  ]
+ },
+ "cluster_text": {
+  "type": "select",
+  "default": "key",
+  "values": [
+   "key",
+   "under",
+   "none"
+  ]
+ },
+ "cluster_text_scale": {
+  "type": "select",
+  "default": "100",
+  "values": [
+   "60",
+   "80",
+   "100",
+   "125",
+   "150"
+  ]
+ },
+ "cluster_labels": {
+  "type": "multiselect",
+  "default": [
+   "name"
+  ],
+  "values": [
+   "name",
+   "sci",
+   "count",
+   "last",
+   "rarity",
+   "new"
+  ]
+ },
+ "cluster_poses": {
+  "type": "select",
+  "default": "perched",
+  "values": [
+   "perched",
+   "mixed"
+  ]
+ },
+ "cluster_scene": {
+  "type": "select",
+  "default": "auto",
+  "values": [
+   "auto",
+   "branch",
+   "tree",
+   "birdbath",
+   "wire",
+   "feeder",
+   "meadow",
+   "sky",
+   "wetland",
+   "garden"
+  ]
+ },
+ "cluster_fidelity": {
+  "type": "select",
+  "default": "exact",
+  "values": [
+   "exact",
+   "free"
+  ]
+ },
+ "cluster_every": {
+  "type": "select",
+  "default": "3",
+  "values": [
+   "1",
+   "3",
+   "6",
+   "24"
+  ]
+ },
+ "font": {
+  "type": "select",
+  "default": "classic",
+  "values": [
+   "classic",
+   "playfair",
+   "typewriter",
+   "hand",
+   "modern",
+   "theme"
+  ]
+ },
+ "night": {
+  "type": "select",
+  "default": "off",
+  "values": [
+   "off",
+   "asleep",
+   "owls"
+  ]
+ },
+ "names": {
+  "type": "select",
+  "default": "birdnet",
+  "values": [
+   "birdnet",
+   "en",
+   "de",
+   "fr",
+   "es",
+   "it",
+   "nl",
+   "pt",
+   "sv",
+   "da",
+   "nb",
+   "fi",
+   "pl",
+   "cs",
+   "ru",
+   "ja",
+   "zh-CN"
+  ]
+ },
+ "names_place": {
+  "type": "select",
+  "default": "",
+  "values": [
+   "",
+   "6744",
+   "6803",
+   "6857",
+   "6718",
+   "1",
+   "6712",
+   "6986",
+   "6681",
+   "7207",
+   "6753",
+   "6774",
+   "6973",
+   "7506",
+   "6737",
+   "6878"
+  ]
+ },
+ "panel": {
+  "type": "select",
+  "default": "colour",
+  "values": [
+   "colour",
+   "gray16",
+   "gray4",
+   "mono"
+  ]
+ },
+ "sort": {
+  "type": "select",
+  "default": "recent",
+  "values": [
+   "recent",
+   "count"
+  ]
+ },
+ "chart_labels": {
+  "type": "select",
+  "default": "none",
+  "values": [
+   "none",
+   "counts",
+   "peak"
+  ]
+ },
+ "count": {
+  "type": "select",
+  "default": "6",
+  "values": [
+   "4",
+   "6",
+   "8",
+   "10",
+   "12"
+  ]
+ },
+ "min_confidence": {
+  "type": "select",
+  "default": "70",
+  "values": [
+   "50",
+   "60",
+   "70",
+   "80",
+   "90"
+  ]
+ },
+ "show_sci": {
+  "type": "boolean",
+  "default": true,
+  "values": []
+ },
+ "footer": {
+  "type": "select",
+  "default": "show",
+  "values": [
+   "show",
+   "credits",
+   "hide"
+  ]
+ },
+ "location": {
+  "type": "location_search",
+  "default": "",
+  "values": []
+ },
+ "label": {
+  "type": "string",
+  "default": "",
+  "values": []
+ },
+ "refresh_min": {
+  "type": "select",
+  "default": "5",
+  "values": [
+   "2",
+   "5",
+   "15",
+   "60"
+  ]
+ }
+}

@@ -1529,3 +1529,508 @@ def test_fugleramme_arrangements_build_a_sheet_and_key_the_cache(tmp_path, offli
     assert tags["spiral"] != tags["voids"]
     assert len(offline.bodies) == 3, "the second arrangement paints nothing new"
     assert server._choice("voids", server.ARRANGEMENTS) == "voids"
+
+
+# ----------------------------------------------------------------------
+# Fugleramme's windows, rankings and spotlight
+# ----------------------------------------------------------------------
+
+
+def _det(i, name, sci, at, conf=0.9):
+    return {
+        "id": i,
+        "commonName": name,
+        "scientificName": sci,
+        "timestamp": at,
+        "date": at[:10],
+        "time": at[11:19],
+        "confidence": conf,
+    }
+
+
+def test_a_window_under_a_day_is_counted_off_the_feed(tmp_path):
+    feed = [
+        _det(5, "Amsel", "Turdus merula", "2026-10-11T07:58:00+11:00"),
+        _det(4, "Amsel", "Turdus merula", "2026-10-11T07:40:00+11:00"),
+        _det(3, "Kohlmeise", "Parus major", "2026-10-11T07:30:00+11:00"),
+        _det(2, "Kohlmeise", "Parus major", "2026-10-11T07:20:00+11:00", 0.4),
+        _det(1, "Rotkehlchen", "Erithacus rubecula", "2026-10-11T06:50:00+11:00"),
+    ]
+    seen = []
+
+    def fake_json(url, token="", **kw):  # noqa: ARG001
+        seen.append(url)
+        return (feed if "detections/recent" in url else []), None
+
+    with _at(8), patch.object(server, "_json", side_effect=fake_json):
+        r = server.fetch(
+            {**MELBOURNE, "url": "b.local", "pictures": "none", "window": "1"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert any(f"detections/recent?limit={server.FEED_SCAN}" in u for u in seen)
+    assert not any("species/" in u for u in seen), "the feed covers the hour"
+    got = {s["name"]: s["count"] for s in r["species"]}
+    # the robin is before the hour, the unsure great tit below the confidence
+    assert got == {"Amsel": 2, "Kohlmeise": 1}
+    amsel = next(s for s in r["species"] if s["name"] == "Amsel")
+    assert amsel["hourly"][7] == 2 and (amsel["first"], amsel["last"]) == (
+        "07:40",
+        "07:58",
+    )
+    assert r["period"] == "in the last hour" and r["strips"] is True
+    assert r["latest"]["name"] == "Amsel"
+
+
+def test_a_feed_that_runs_out_falls_back_to_the_summary(tmp_path):
+    # a thousand calls in the last few minutes: they do not reach 12 hours back
+    feed = [
+        _det(i, "Amsel", "Turdus merula", "2026-10-11T07:59:00+11:00")
+        for i in range(server.FEED_SCAN)
+    ]
+    summary = [
+        {
+            "common_name": "Amsel",
+            "scientific_name": "Turdus merula",
+            "count": 1400,
+            "last_heard": "2026-10-11T07:59:00+11:00",
+        },
+        {
+            "common_name": "Waldkauz",
+            "scientific_name": "Strix aluco",
+            "count": 3,
+            "last_heard": "2026-10-10T18:00:00+11:00",
+        },
+    ]
+    seen = []
+
+    def fake_json(url, token="", **kw):  # noqa: ARG001
+        seen.append(url)
+        return (feed if "detections/recent" in url else summary), None
+
+    with _at(8), patch.object(server, "_json", side_effect=fake_json):
+        r = server.fetch(
+            {**MELBOURNE, "url": "b.local", "pictures": "none", "window": "12"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert any(
+        "species/summary?start_date=2026-10-10&end_date=2026-10-11" in u for u in seen
+    ), "the dates the window touches, rounded outward"
+    # the owl's last call was before the cutoff (20:14 the day before)
+    assert [s["name"] for s in r["species"]] == ["Amsel"]
+
+
+@pytest.mark.parametrize(
+    ("window", "query"),
+    [
+        ("72", "start_date=2026-10-08&end_date=2026-10-11"),
+        ("720", "start_date=2026-09-11&end_date=2026-10-11"),
+        ("week", "start_date=2026-10-05&end_date=2026-10-11"),
+        ("0", "summary?min_confidence=70"),
+    ],
+)
+def test_longer_windows_read_the_summary(tmp_path, window, query):
+    summary = [
+        {
+            "common_name": "Amsel",
+            "scientific_name": "Turdus merula",
+            "count": 40,
+            "last_heard": "2026-10-11T07:00:00+11:00",
+        },
+        {
+            "common_name": "Star",
+            "scientific_name": "Sturnus vulgaris",
+            "count": 5,
+            "last_heard": "2026-09-01T07:00:00+10:00",
+        },
+    ]
+    seen = []
+
+    def fake_json(url, token="", **kw):  # noqa: ARG001
+        seen.append(url)
+        return (summary if "summary" in url else []), None
+
+    with _at(8), patch.object(server, "_json", side_effect=fake_json):
+        r = server.fetch(
+            {**MELBOURNE, "url": "b.local", "pictures": "none", "window": window},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert any(query in u for u in seen), seen
+    names = [s["name"] for s in r["species"]]
+    # a bird last heard before a rolling window began is not in it
+    assert names == (["Amsel"] if window in ("72", "720") else ["Amsel", "Star"])
+    assert r["strips"] is False, "no hours over days"
+    # how long ago counts the days, not only the clock
+    ages = {s["name"]: s["ago_min"] for s in r["species"]}
+    assert ages["Amsel"] == 74
+    if "Star" in ages:
+        assert ages["Star"] > 40 * 1440
+    assert r["period"] == server.PERIODS[window]
+
+
+def test_only_the_birds_heard_to_day_are_logged_as_heard_to_day(tmp_path):
+    summary = [
+        {
+            "common_name": "Amsel",
+            "scientific_name": "Turdus merula",
+            "count": 40,
+            "last_heard": "2026-10-11T07:00:00+11:00",
+        },
+        {
+            "common_name": "Star",
+            "scientific_name": "Sturnus vulgaris",
+            "count": 5,
+            "last_heard": "2026-10-08T07:00:00+11:00",
+        },
+    ]
+    with (
+        _at(8),
+        patch.object(
+            server,
+            "_json",
+            side_effect=lambda url, *a, **k: (
+                (summary if "summary" in url else []),
+                None,
+            ),
+        ),
+    ):
+        server.fetch(
+            {**MELBOURNE, "url": "b.local", "pictures": "none", "window": "week"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    log = json.loads((tmp_path / "rarity.json").read_text(encoding="utf-8"))
+    assert log["seen"] == {"Turdus merula": ["2026-10-11"]}
+    assert log["names"]["Sturnus vulgaris"] == "Star", "still named for the atlas"
+
+
+def _birds(*rows):
+    return [
+        {
+            "name": n,
+            "sci": n.lower(),
+            "count": c,
+            "last_at": f"2026-10-11T{t}:00",
+            "last": t,
+        }
+        for n, c, t in rows
+    ]
+
+
+def test_fugleramme_rankings_pick_the_birds_a_page_keeps():
+    species = _birds(
+        ("Amsel", 40, "07:00"),
+        ("Star", 2, "07:50"),
+        ("Meise", 9, "06:00"),
+        ("Kauz", 2, "05:00"),
+        ("Fink", 20, "07:30"),
+    )
+    ever = {"amsel": ["d"] * 30, "star": ["d"] * 12, "meise": ["d"], "kauz": ["d"] * 4}
+
+    def pick(r, n=2, **k):
+        return [s["name"] for s in server._ranked(species, r, n, ever, **k)]
+
+    assert pick("heard") == ["Amsel", "Fink"]
+    assert pick("rarest") == ["Kauz", "Star"], "fewest calls, ties on the name"
+    assert pick("rarest_ever") == ["Meise", "Fink"], (
+        "fewest days (an unlogged bird as one), then fewest calls"
+    )
+    assert pick("last_heard") == ["Star", "Fink"]
+    # the spotlit bird takes a place ahead of the ranking
+    assert pick("heard", lead="Kauz") == ["Kauz", "Amsel"]
+    assert pick("heard", 9) == ["Amsel", "Fink", "Meise", "Kauz", "Star"]
+
+
+def test_cluster_and_list_keep_the_ranked_birds(tmp_path, offline):
+    with _at(9):
+        busy = server.fetch(
+            {**MELBOURNE, "layout": "cluster", "pictures": "photo", "cluster_size": 3},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        rare = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "cluster",
+                "pictures": "photo",
+                "cluster_size": 3,
+                "ranking": "rarest",
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        listed = server.fetch(
+            {**MELBOURNE, "layout": "gallery", "pictures": "none", "count": 4},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        listed_rare = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "gallery",
+                "pictures": "none",
+                "count": 4,
+                "pick": "rarest",
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    counts = sorted((s["count"], s["name"]) for s in listed["species"])
+    every = sorted(
+        (s["count"], s["name"])
+        for s in server._demo(MELBOURNE, server.datetime(2026, 10, 11, 9, 14))[
+            "species"
+        ]
+    )
+    assert sorted(b["count"] for b in busy["cluster"]["birds"]) == sorted(
+        c for c, _n in every[-3:]
+    )
+    assert sorted(b["count"] for b in rare["cluster"]["birds"]) == sorted(
+        c for c, _n in every[:3]
+    )
+    # as ordered: the four latest heard; rarest: the four fewest calls, still
+    # shown latest first
+    assert len(counts) == 4
+    assert sorted(s["count"] for s in listed_rare["species"]) == [
+        c for c, _n in every[:4]
+    ]
+    lasts = [s["last_at"] for s in listed_rare["species"]]
+    assert lasts == sorted(lasts, reverse=True)
+
+
+def test_which_bird_follows_the_window(tmp_path, offline):
+    with _at(9):
+        r = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "plate",
+                "pictures": "none",
+                "hero": "busy",
+                "window": "72",
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        q = server.fetch(
+            {
+                **MELBOURNE,
+                "layout": "plate",
+                "pictures": "none",
+                "hero": "quiet",
+                "window": "1",
+            },
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+        n = server.fetch(
+            {**MELBOURNE, "layout": "plate", "pictures": "none", "hero": "new"},
+            {},
+            ctx={"data_dir": str(tmp_path)},
+        )
+    assert r["hero_kick"] == "Most calls in the last 3 days"
+    assert r["latest"]["count"] == max(s["count"] for s in r["species"])
+    assert q["hero_kick"] == "Fewest calls in the last hour"
+    assert n["latest"]["new"] and n["hero_kick"] == "New to-day"
+
+
+def test_newest_arrival_over_a_longer_window_comes_from_the_log():
+    species = _birds(("Amsel", 40, "07:00"), ("Star", 2, "07:50"), ("Kauz", 1, "05:00"))
+    ever = {
+        "amsel": ["2026-09-01", "2026-10-11"],
+        "star": ["2026-10-10", "2026-10-11"],
+        "kauz": ["2026-10-11"],
+    }
+    now = datetime(2026, 10, 11, 8, 0, tzinfo=ZoneInfo("Australia/Melbourne"))
+    got = server._arrival(species, ever, "2026-09-01", "week", now)
+    assert got["name"] == "Kauz", "the bird the log first met latest"
+    assert server._arrival(species, ever, "2026-09-01", "1", now)["name"] == "Kauz"
+    # nothing arrives on the day the log began: every bird is first met then
+    assert server._arrival(species, ever, "2026-10-11", "week", now) is None
+    # BirdNET-Go's own flag wins over the log
+    flagged = [{**species[0], "new": True}, *species[1:]]
+    assert server._arrival(flagged, ever, "2026-09-01", "week", now)["name"] == "Amsel"
+
+
+def _spot_check(birds, spots, W, H, label=0.017):
+    """The spotlit bird's middle on the page's, larger than any other, and no
+    bird on another (labels left to the label test above)."""
+    import numpy as np
+
+    page = np.zeros((H, W), dtype=np.int16)
+    dims = []
+    for b, (x, y, scale) in zip(birds, spots, strict=True):
+        assert scale > 0, f"{b['name']} was left off"
+        m = b["mask"]
+        fit = m.resize((max(1, int(m.width * scale)), max(1, int(m.height * scale))))
+        body = np.asarray(fit.point(lambda v: 255 if v > 127 else 0), dtype=bool)
+        h, w = body.shape
+        assert 0 <= x and 0 <= y and x + w <= W and y + h <= H
+        page[y : y + h, x : x + w] += body
+        dims.append(max(w, h))
+        if b.get("spot"):
+            ys, xs = np.nonzero(body)
+            cx, cy = x + xs.mean(), y + ys.mean()
+    assert page.max() <= 1, "no bird overlaps another"
+    assert dims[0] > max(dims[1:]), "the spotlit bird is the largest"
+    assert abs(cx - W / 2) < W * 0.04 and abs(cy - H / 2) < H * 0.06, "in the middle"
+
+
+@pytest.mark.parametrize("arrange", ["spiral", "voids"])
+@pytest.mark.parametrize("size", [(1600, 960), (900, 1500)])
+def test_spotlight_is_pinned_in_the_middle_by_fugleramme(arrange, size):
+    W, H = size
+    birds = _demo_sheet_birds("true")[:8]
+    small = min(range(len(birds)), key=lambda i: birds[i]["factor"])
+    birds.insert(0, {**birds.pop(small), "spot": True})
+    got = server._pack_fugleramme(birds, W, H, 0.017, "sheet", arrange)
+    assert got is not None
+    spots, anchors = got
+    _spot_check(birds, spots, W, H)
+    # its long side is Fugleramme's share of the page's short side
+    m = birds[0]["mask"]
+    long_side = max(m.size) * spots[0][2]
+    inner = min(W * 0.92, H * 0.88)
+    assert abs(long_side - server.SPOTLIGHT_SHARE * inner) < inner * 0.03
+    # its label (half as large again) under it
+    assert anchors[0][1] * H > spots[0][1]
+
+
+@pytest.mark.parametrize("arrange", ["oval", "rows", "ring", "heap"])
+def test_spotlight_is_pinned_in_the_middle_on_the_own_arrangements(arrange):
+    W, H = 1600, 960
+    birds = _demo_sheet_birds("true")[:8]
+    birds.insert(0, {**birds.pop(5), "spot": True})
+    spots = server._pack_sheet(birds, W, H, 0.017, "sheet", arrange)
+    _spot_check(birds, spots, W, H)
+
+
+def test_spotlight_reaches_the_sheet_and_the_client(tmp_path, offline):
+    ctx = {"data_dir": str(tmp_path), "cell_w": 800, "cell_h": 480}
+    opts = {
+        **MELBOURNE,
+        "layout": "cluster",
+        "pictures": "gen",
+        "cluster_size": 3,
+        "cluster_arrange": "spiral",
+        "spotlight": True,
+        "ranking": "heard",
+    }
+    with _at(8):
+        latest = max(
+            server._demo(MELBOURNE, server.datetime.now())["species"],
+            key=lambda s: s["last"],
+        )["name"]
+        for _ in range(5):
+            server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+            _settle()
+        r = server.fetch(opts, {"fal_api_key": "k"}, ctx=ctx)
+    c = r["cluster"]
+    spot = [b for b in c["birds"] if b.get("spot")]
+    assert [b["name"] for b in spot] == [latest], "the latest bird, ranked or not"
+    made = [
+        json.loads(p.read_text(encoding="utf-8"))
+        for p in (tmp_path / "gen").glob("sheet_*.json")
+    ]
+    assert any(m.get("spot") for m in made)
+    if shutil.which("node"):
+        script = (
+            f"import('file://{ROOT}/client.js').then(m => {{ const s = {{innerHTML: ''}};"
+            f" m.default(s, {{data: {json.dumps(r)}, cell: {{size: 'md'}}}});"
+            " if (!s.innerHTML.includes('sh-l sh-spot')) throw new Error('no spot');"
+            " console.log('ok'); })"
+        )
+        out = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert out.returncode == 0, out.stderr
+    # the wreath keeps its middle for the title: no spotlight there
+    with _at(8):
+        w = server.fetch(
+            {**opts, "cluster_style": "wreath"}, {"fal_api_key": "k"}, ctx=ctx
+        )
+    assert not any(b.get("spot") for b in (w["cluster"] or {}).get("birds", []))
+
+
+def _visible_always(manifest):
+    return [
+        o["name"]
+        for o in manifest["cell_options"]
+        if not o.get("show_if") and not o.get("advanced")
+    ]
+
+
+def test_options_panel_follows_the_rulebook():
+    manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    opts = manifest["cell_options"]
+    by = {o["name"]: o for o in opts}
+    assert len(by) == len(opts), "option names are unique"
+    assert len(_visible_always(manifest)) <= 5
+    assert _visible_always(manifest)[:2] == ["url", "layout"]
+    # every show_if names an option above it, and values it has
+    for o in opts:
+        for key, want in (o.get("show_if") or {}).items():
+            assert key in by, f"{o['name']} depends on {key}, which is not an option"
+            assert key != o["name"]
+            ref = by[key]
+            vals = {c["value"] for c in ref.get("choices", [])}
+            raw = want["not"] if isinstance(want, dict) else want
+            for v in raw if isinstance(raw, list) else [raw]:
+                if ref["type"] == "boolean":
+                    assert isinstance(v, bool)
+                elif vals:
+                    assert v in vals, f"{o['name']}: {key}={v!r} is not a choice"
+    # the advanced ones come last
+    flags = [bool(o.get("advanced")) for o in opts]
+    assert flags == sorted(flags), "More options at the end"
+    # labels: no look prefixes, no em dashes, the shared words
+    for o in opts:
+        assert not o["label"].startswith(("Cluster:", "Full bleed:")), o["label"]
+        text = json.dumps(o, ensure_ascii=False)
+        assert chr(0x2014) not in text, o["name"]
+    assert (
+        by["font"]["label"] == "Typeface"
+        and by["footer"]["label"] == "Foot of the page"
+    )
+    assert by["location"]["label"] == "Place"
+    for name in ("token", "font", "min_confidence", "refresh_min", "sort", "footer"):
+        assert by[name].get("advanced"), name
+
+
+def test_saved_cells_keep_working_against_v0_15_1():
+    old = json.loads(
+        (ROOT / "tests" / "manifest_v0_15_1.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((ROOT / "plugin.json").read_text(encoding="utf-8"))
+    by = {o["name"]: o for o in manifest["cell_options"]}
+    for name, was in old.items():
+        assert name in by, f"{name} was removed"
+        now = by[name]
+        assert now["type"] == was["type"] and now.get("default") == was["default"], name
+        values = [c["value"] for c in now.get("choices", [])]
+        assert set(was["values"]) <= set(values), f"{name} lost a choice"
+    # the new options default to what the page did before
+    assert by["ranking"]["default"] == "heard"
+    assert by["pick"]["default"] == "order"
+    assert by["spotlight"]["default"] is False
+    assert [c["value"] for c in by["window"]["choices"]] == [
+        "0.25",
+        "0.5",
+        "1",
+        "3",
+        "6",
+        "12",
+        "today",
+        "72",
+        "week",
+        "720",
+        "0",
+    ]
+    assert set(server.WINDOWS) == {c["value"] for c in by["window"]["choices"]}
+    assert set(server.HEROES) == {c["value"] for c in by["hero"]["choices"]}
+    assert set(server.RANKINGS) == {c["value"] for c in by["ranking"]["choices"]}
+    assert set(server.PICKS) == {c["value"] for c in by["pick"]["choices"]}

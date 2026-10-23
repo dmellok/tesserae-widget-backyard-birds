@@ -20,7 +20,8 @@ function ago(m) {
   if (m == null) return '';
   if (m < 1) return 'just now';
   if (m < 60) return `${m} min ago`;
-  return `${Math.floor(m / 60)} h ago`;
+  if (m < 2880) return `${Math.floor(m / 60)} h ago`;
+  return `${Math.floor(m / 1440)} days ago`;
 }
 
 const ORD = ['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
@@ -105,7 +106,7 @@ function song(d, cls) {
 function chorus(d, showSci, tone, portrait) {
   const mins = (t) => { const [h, m] = String(t || '').split(':').map(Number); return Number.isFinite(h) ? h * 60 + (m || 0) : null; };
   const all = d.species.filter((s) => mins(s.first) != null).sort((a, b) => mins(a.first) - mins(b.first));
-  if (!all.length) return `${head(d)}<div class="msg"><div class="msg-b">Nothing heard yet today.</div></div>`;
+  if (!all.length) return `${head(d)}<div class="msg"><div class="msg-b">${esc(nothing(d))}</div></div>`;
   /* the main run: the longest stretch with no gap over 90 minutes */
   let runs = [[all[0]]];
   for (let i = 1; i < all.length; i++) {
@@ -175,7 +176,7 @@ function night(d) {
       ${moon}
       <div class="nt-t">The garden is asleep</div>
       <div class="nt-s">Nothing heard for ${since}${L.name ? `. Last was the ${esc(L.name)} at ${esc(L.last)}` : ''}.</div>
-      <div class="nt-f">${esc(sky.moon_name || '')}${sky.sunrise ? ` · sunrise ${esc(sky.sunrise)}` : ''} · ${d.species_today} species to-day</div>
+      <div class="nt-f">${esc(sky.moon_name || '')}${sky.sunrise ? ` · sunrise ${esc(sky.sunrise)}` : ''} · ${d.species_today} species ${esc(per(d))}</div>
     </div>`;
 }
 
@@ -217,6 +218,16 @@ function dial(hourly, nowHour) {
     <g class="lb">${labels}</g></svg>`;
 }
 
+/* how the page's window is said: the day in the look's own spelling, or
+   the window ("in the last hour", "this week", "since records began") */
+function per(d, today = 'to-day') {
+  return d.window && d.window !== 'today' ? d.period || today : today;
+}
+
+function nothing(d) {
+  return d.window && d.window !== 'today' ? `Nothing heard ${d.period || ''}.` : 'Nothing heard yet today.';
+}
+
 function head(d) {
   /* the printed header every everyday page shares: the garden and the day
      in small caps over a double rule */
@@ -224,6 +235,9 @@ function head(d) {
 }
 
 function strip(d) {
+  /* the hours of the day (or of a window shorter than one); a longer
+     window has no hours, so no strip */
+  if (d.strips === false) return '';
   const mx = Math.max(1, ...d.hourly_total);
   const peak = d.hourly_total.indexOf(mx);
   const labels = d.chart_labels || 'none';
@@ -289,8 +303,8 @@ function latest(d, showSci, tone) {
     <div class="ev ev-latest">
       ${hero(d, L, tone, true)}
       <div class="ev-side">${head(d)}
-        <div class="ev-stats"><div><b>${L.count}</b><span>calls, this bird</span></div><div><b>${Math.round(L.conf * 100)}%</b><span>certain</span></div><div><b>${d.species_today}</b><span>species to-day</span></div></div>
-        <div class="ev-also">Also heard to-day</div>
+        <div class="ev-stats"><div><b>${L.count}</b><span>calls, this bird</span></div><div><b>${Math.round(L.conf * 100)}%</b><span>certain</span></div><div><b>${d.species_today}</b><span>species ${esc(per(d))}</span></div></div>
+        <div class="ev-also">Also heard ${esc(per(d))}</div>
         <div class="ev-rows fitrows">${rows}</div>
         <div class="ev-foot">${strip(d)}<span class="ev-tot">${d.detections_today} calls</span></div>
       </div>
@@ -303,7 +317,7 @@ function gallery(d, showSci, tone) {
       ${pic(s.pic, 'gc-p', tone)}
       <div class="gc-n">${esc(s.name)}${tag(s)}</div>
       ${showSci && s.sci ? `<div class="gc-s">${esc(s.sci)}</div>` : ''}
-      <div class="gc-c">${s.count}<span> calls · ${esc(ago(s.ago_min))}</span></div>
+      <div class="gc-c">${s.count}<span> call${s.count === 1 ? '' : 's'}${s.ago_min == null ? '' : ` · ${esc(ago(s.ago_min))}`}</span></div>
     </div>`).join('');
   return `${head(d)}<div class="grid n${Math.min(d.species.length, 12)}">${tiles}</div>
     <div class="ev-foot bare"><span class="ev-tot">${d.species_today} species · ${d.detections_today} calls</span></div>${foot(d)}`;
@@ -371,8 +385,8 @@ function plate(d, showSci, tone) {
         ${showSci && L.sci ? `<div class="psci">${esc(L.sci)}.</div>` : ''}
         ${song(d, 'p-song')}
         <div class="prule"></div>
-        <div class="pline">${nth ? `Heard the ${esc(nth)} time to-day` : ''}, ${Math.round(L.conf * 100)} per cent. certain.</div>
-        <div class="pkick sp">In the garden to-day · ${d.species_today} species</div>
+        <div class="pline">${nth ? `Heard the ${esc(nth)} time ${esc(per(d))}` : ''}, ${Math.round(L.conf * 100)} per cent. certain.</div>
+        <div class="pkick sp">In the garden ${esc(per(d))} · ${d.species_today} species</div>
         <div class="pcols">${others.map((s) => `<div><span>${esc(s.name)}</span><b>${s.count}</b></div>`).join('')}</div>
         <div class="pcredit">${esc((L.pic && L.pic.credit) || '')}</div>
       </div>
@@ -390,13 +404,13 @@ function bleed(d, showSci, tone, caption) {
       <div class="ed-n" style="${fit(L.name, 24, 46, 0.5)}">${esc(L.name)}</div>
       ${sci ? `<div class="ed-s">${sci}</div>` : ''}
       ${song(d, 'ed-song')}
-      <div class="ed-st"><span><b>${L.count}</b> calls today</span><span><b>${d.species_today}</b> species</span></div></div>`;
+      <div class="ed-st"><span><b>${L.count}</b> calls ${esc(per(d, 'today'))}</span><span><b>${d.species_today}</b> species</span></div></div>`;
   } else if (caption === 'notebook') {
     cap = `<div class="nb">
       <div class="nb-d">${esc(d.date)} · ${esc(L.last)}</div>
       <div class="nb-n">${esc(L.name)}!</div>
       ${sci ? `<div class="nb-s">${sci}</div>` : ''}
-      <div class="nb-t">heard ${esc(when)} &mdash; <u>${L.count}</u> times today</div>
+      <div class="nb-t">heard ${esc(when)} &mdash; <u>${L.count}</u> times ${esc(per(d, 'today'))}</div>
       <div class="nb-t">${d.species_today} species so far &#10003;</div>
       <div class="nb-c">BirdNET ${Math.round(L.conf * 100)}% sure</div></div>`;
   } else if (caption === 'folio') {
@@ -407,7 +421,7 @@ function bleed(d, showSci, tone, caption) {
         <div class="fo-n" style="${fit(`${L.name}.`, 7.4, 84, 0.68, true)}">${esc(L.name)}.</div>
         ${sci ? `<div class="fo-s">${sci}.</div>` : ''}
         ${song(d, 'fo-song')}
-        <div class="fo-l">${nth ? `Heard the ${esc(nth)} time to-day` : 'Heard to-day'}, last at ${esc(L.last)}.</div></div>`;
+        <div class="fo-l">${nth ? `Heard the ${esc(nth)} time ${esc(per(d))}` : `Heard ${esc(per(d))}`}, last at ${esc(L.last)}.</div></div>`;
   } else if (caption === 'museum') {
     cap = `<div class="mu">
         <div class="mu-h">${esc(d.label)}</div>
@@ -416,7 +430,7 @@ function bleed(d, showSci, tone, caption) {
           <dt>Name</dt><dd>${esc(L.name)}</dd>
           ${sci ? `<dt>Species</dt><dd class="it">${sci}</dd>` : ''}
           <dt>Date</dt><dd>${esc(d.date)}, ${esc(L.last)}</dd>
-          <dt>Calls</dt><dd>${L.count} to-day</dd>
+          <dt>Calls</dt><dd>${L.count} ${esc(per(d))}</dd>
           <dt>Det.</dt><dd>BirdNET, ${Math.round(L.conf * 100)}%</dd>
         </dl></div>`;
   } else if (caption === 'figure') {
@@ -455,28 +469,28 @@ function bleed(d, showSci, tone, caption) {
   } else if (caption === 'nouveau') {
     cap = `<div class="nv-arch"></div>
       <div class="nv-band"><div class="nv-n" style="${fit(L.name, 6.6, 66, 0.52, true)}">${esc(L.name)}</div>
-        <div class="nv-s">${sci ? `${sci} · ` : ''}${L.count} calls to-day</div></div>`;
+        <div class="nv-s">${sci ? `${sci} · ` : ''}${L.count} calls ${esc(per(d))}</div></div>`;
   } else if (caption === 'sonogram') {
     const sn = d.sono;
     cap = `<div class="sn">
       <div class="sn-h"><span class="sn-n" style="${fit(L.name, 5.6, 56, 0.68, true)}">${esc(L.name)}</span>${sci ? `<span class="sn-s">${sci}</span>` : ''}</div>
       <div class="sn-img">${sn && sn.src ? `<img src="${sn.src}" alt="">` : `<div class="sn-none">No recording of this call yet</div>`}</div>
-      <div class="sn-c"><span>${sn && sn.at ? `Call recorded ${esc(sn.at)}` : 'Sonogram'} · ${L.count} calls to-day</span><span>time &rarr; · pitch &uarr;</span></div></div>`;
+      <div class="sn-c"><span>${sn && sn.at ? `Call recorded ${esc(sn.at)}` : 'Sonogram'} · ${L.count} calls ${esc(per(d))}</span><span>time &rarr; · pitch &uarr;</span></div></div>`;
   } else if (caption === 'tag') {
     cap = `<div class="tg"><svg class="tg-bg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon points="0,12 8,0 100,0 100,100 8,100 0,88"/></svg>
       <div class="tg-k">${esc(d.label).toUpperCase()} · NO. ${String(d.detections_today).padStart(4, '0')}</div>
       <div class="tg-n">${esc(L.name)}</div>
       ${sci ? `<div class="tg-s">${sci}</div>` : ''}
-      <div class="tg-f">HEARD.... ${esc(d.date_iso)} ${esc(L.last)}<br>CALLS.... ${L.count} today<br>CONF..... ${L.conf.toFixed(2)}<br>SPECIES.. ${d.species_today} today</div></div>`;
+      <div class="tg-f">HEARD.... ${esc(d.date_iso)} ${esc(L.last)}<br>CALLS.... ${L.count} ${esc(per(d, 'today'))}<br>CONF..... ${L.conf.toFixed(2)}<br>SPECIES.. ${d.species_today} ${esc(per(d, 'today'))}</div></div>`;
   } else if (caption === 'poster') {
     cap = `<div class="po">
       <div class="po-n" style="${fit(L.name, 15, 33, 0.74)}">${esc(L.name)}</div>
       ${sci ? `<div class="po-s">${sci}</div>` : ''}
-      <div class="po-st"><div><b>${L.count}</b><span>calls today</span></div><div><b>${esc(L.last)}</b><span>last heard</span></div></div></div>`;
+      <div class="po-st"><div><b>${L.count}</b><span>calls ${esc(per(d, 'today'))}</span></div><div><b>${esc(L.last)}</b><span>last heard</span></div></div></div>`;
   } else {
     cap = `<div class="bd">
       <div class="bd-t"><div class="kick">${esc(d.hero_kick || 'Just heard')} · ${esc(when)}</div><div class="bd-n" style="${fit(L.name, 7.4, 62, 0.56, true)};--two:${twoLines(L.name, 7.4, 56, 0.56)}">${esc(L.name)}${tag(L)}</div></div>
-      <div class="bd-c a"><b>${L.count}</b><span>calls today</span></div>
+      <div class="bd-c a"><b>${L.count}</b><span>calls ${esc(per(d, 'today'))}</span></div>
       <div class="bd-c k"><b>${d.species_today}</b><span>species</span></div></div>`;
   }
   const credit = L.pic && L.pic.credit ? `<div class="bcredit">${esc(L.pic.credit)}</div>` : '';
@@ -504,7 +518,7 @@ function sheet(d, C) {
   const labelOf = (b) => lines.map((l) => {
     if (l === 'name') return `<span class="sh-ln">${esc(b.name)}</span>`;
     if (l === 'sci') return b.sci ? `<span class="sh-ln sh-sci">${esc(b.sci)}</span>` : '';
-    if (l === 'count') return `<span class="sh-ln sh-sm">${b.count} call${b.count === 1 ? '' : 's'} to-day</span>`;
+    if (l === 'count') return `<span class="sh-ln sh-sm">${b.count} call${b.count === 1 ? '' : 's'} ${esc(per(d))}</span>`;
     if (l === 'last') return b.last ? `<span class="sh-ln sh-sm">last heard ${esc(b.last)}</span>` : '';
     if (l === 'rarity') return b.rarity ? `<span class="sh-ln sh-sm">${esc(b.rarity)}</span>` : '';
     if (l === 'new') return b.new ? '<span class="sh-ln"><span class="sh-new">new</span></span>' : '';
@@ -515,17 +529,18 @@ function sheet(d, C) {
     const t = keyed ? String(i + 1) : labelOf(b);
     if (!t) return '';
     const rot = mode === 'notebook' && b.rot ? `;transform:translate(-50%, 15%) rotate(${-b.rot}deg)` : '';
-    return `<span class="sh-l" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%${rot}">${t}</span>`;
+    /* the spotlit bird's label is set half as large again, as it was packed */
+    return `<span class="sh-l${b.spot ? ' sh-spot' : ''}" style="left:${(x * 100).toFixed(2)}%;top:${(y * 100).toFixed(2)}%${rot}">${t}</span>`;
   }).join('');
   const waiting = (C.waiting || []).length;
   const verb = C.waiting_verb || 'paint';
-  const line = `${esc(d.label)} · heard to-day · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to ${verb}` : ''}`;
+  const line = `${esc(d.label)} · heard ${esc(per(d))} · ${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to ${verb}` : ''}`;
   let extra = `<div class="sh-c">${line}</div>`;
   if (mode === 'wreath') {
-    extra = `<div class="sh-w"><div class="sh-wk">${esc(d.label)}</div><div class="sh-wt">Heard to-day</div>
+    extra = `<div class="sh-w"><div class="sh-wk">${esc(d.label)}</div><div class="sh-wt">Heard ${esc(per(d))}</div>
       <div class="sh-wd">${esc(d.date)} · ${d.species_today} species${waiting ? ` · ${waiting} still to paint` : ''}</div></div>`;
   } else if (mode === 'notebook') {
-    extra = `<div class="sh-nb">${esc(d.label)}, ${esc(d.date)} &mdash; ${d.species_today} species heard${waiting ? `, ${waiting} still to draw` : ''}</div>`;
+    extra = `<div class="sh-nb">${esc(d.label)}, ${esc(d.date)} &mdash; ${d.species_today} species heard${d.window && d.window !== 'today' ? ` ${esc(per(d))}` : ''}${waiting ? `, ${waiting} still to draw` : ''}</div>`;
   } else if (mode === 'drawer') {
     extra = `<div class="sh-plaque">${esc(d.label)} · ${esc(d.date)}</div>`;
   }
@@ -537,9 +552,9 @@ function sheet(d, C) {
       <div class="cl-pic">${page}</div>
       <div class="cl-key">
         <div class="cl-k">${esc(d.label)} · ${esc(d.date)}</div>
-        <div class="cl-t">Heard to-day</div>
+        <div class="cl-t">Heard ${esc(per(d))}</div>
         <ol class="fitrows">${rows}</ol>
-        <div class="cl-f">${d.species_today} species · ${d.detections_today} calls to-day${waiting ? ` · ${waiting} still to paint` : ''}</div>
+        <div class="cl-f">${d.species_today} species · ${d.detections_today} calls ${esc(per(d))}${waiting ? ` · ${waiting} still to paint` : ''}</div>
       </div>
     </div>${foot(d)}`;
   }
@@ -558,7 +573,7 @@ function cluster(d, showSci, tone) {
   const labelOf = (b) => lines.map((l) => {
     if (l === 'name') return `<span class="sh-ln">${esc(b.name)}</span>`;
     if (l === 'sci') return b.sci ? `<span class="sh-ln sh-sci">${esc(b.sci)}</span>` : '';
-    if (l === 'count') return `<span class="sh-ln sh-sm">${b.count} call${b.count === 1 ? '' : 's'} to-day</span>`;
+    if (l === 'count') return `<span class="sh-ln sh-sm">${b.count} call${b.count === 1 ? '' : 's'} ${esc(per(d))}</span>`;
     return '';
   }).join('');
   const boxes = Array.isArray(C.boxes) && C.boxes.length === birds.length ? C.boxes : null;
@@ -579,9 +594,9 @@ function cluster(d, showSci, tone) {
   const key = text === 'key' ? `
       <div class="cl-key">
         <div class="cl-k">${esc(d.label)} · ${esc(d.date)}</div>
-        <div class="cl-t">Heard to-day</div>
+        <div class="cl-t">Heard ${esc(per(d))}</div>
         <ol class="fitrows">${rows}</ol>
-        <div class="cl-f">${d.species_today} species · ${d.detections_today} calls to-day</div>${waiting}
+        <div class="cl-f">${d.species_today} species · ${d.detections_today} calls ${esc(per(d))}</div>${waiting}
       </div>` : '';
   return `
     <div class="cl${numbered ? ' montage' : ''}${key ? '' : ' nokey'}"${paper}>
@@ -618,7 +633,7 @@ export default function render(shadow, ctx) {
   if (d.error) {
     body = `<div class="msg"><div class="msg-t">Backyard birds</div><div class="msg-b">${esc(d.error)}</div></div>`;
   } else if (d.empty || !d.latest) {
-    body = `${head(d)}<div class="msg"><div class="msg-b">Nothing heard yet today.</div>
+    body = `${head(d)}<div class="msg"><div class="msg-b">${esc(nothing(d))}</div>
             <div class="msg-h">BirdNET-Go lists a bird once it is heard above the confidence you set.</div></div>`;
   } else if (d.asleep) body = night(d);
   else if (layout === 'chorus') body = chorus(d, showSci, tone, !!(shadow.host && shadow.host.clientHeight > shadow.host.clientWidth));
@@ -1138,6 +1153,8 @@ export default function render(shadow, ctx) {
       .sh-l { position: absolute; transform: translate(-50%, 15%); white-space: nowrap; text-align: center; line-height: 1.15; font-family: var(--bb-sc); font-size: calc(var(--lf) * 100cqh); letter-spacing: .04em; }
       .sh-c { position: absolute; left: 0; right: 0; bottom: 1.6%; text-align: center; font-family: var(--bb-serif); font-style: italic; font-size: calc(var(--lf) * 100cqh); opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sh-numbered .sh-l { font-family: var(--bb-serif); font-size: calc(var(--lf) * 170cqh); }
+      .sh-l.sh-spot { font-size: calc(var(--lf) * 150cqh); }
+      .sh-numbered .sh-l.sh-spot { font-size: calc(var(--lf) * 255cqh); }
       @container (max-aspect-ratio: 1) {
         /* the plate keeps most of a tall cell; the key takes two columns */
         .cl-numbered .cl-key { max-height: 38%; flex: 0 0 auto; justify-content: flex-start; }
@@ -1155,6 +1172,7 @@ export default function render(shadow, ctx) {
       .sh-wd { font-style: italic; font-size: calc(var(--lf) * 110cqh); }
       .sh-notebook { color: #23324a; }
       .sh-notebook .sh-l { font-family: Caveat, cursive; font-size: calc(var(--lf) * 150cqh); letter-spacing: 0; }
+      .sh-notebook .sh-l.sh-spot { font-size: calc(var(--lf) * 225cqh); }
       .sh-nb { position: absolute; left: 12%; right: 3%; top: 2.2%; font-family: Caveat, cursive; font-size: calc(var(--lf) * 190cqh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .sh-drawer .sh-l { background: #fbf8ef; color: #1d1a16; padding: .25em .6em .2em; box-shadow: 0 0 0 1px #6d6457; transform: translate(-50%, 0); max-width: 30%; overflow: hidden; text-overflow: ellipsis; }
       .sh-plaque { position: absolute; left: 50%; top: 0; height: 5%; transform: translateX(-50%); display: flex; align-items: center; padding: 0 1.2em; max-width: 70%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
