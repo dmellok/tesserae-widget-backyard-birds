@@ -1,7 +1,7 @@
 {
   "tesserae_compat": "1.x",
   "name": "Backyard Birds",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "kind": "widget",
   "render": {
     "warm_ahead_s": 150
@@ -595,11 +595,19 @@
           "not": "chart"
         }
       },
-      "help": "Classic plates come from a reviewed pack of public-domain illustrations; birds without one get a photo toned to match. The AI options need a fal.ai key in the widget settings. In the cluster layout the AI options paint each bird and blend them into one picture; otherwise it shows their own pictures side by side.",
+      "help": "Classic plates come from a reviewed pack of public-domain illustrations; birds without one get a photo toned to match. Bird stickers are huashu-bird-sticker's illustrations, one for every living bird species, drawn from a photograph and reviewed for field marks, with a white sticker edge; free except in a birding app. The AI options need a fal.ai key in the widget settings. In the cluster layout the AI options paint each bird and blend them into one picture; otherwise it shows their own pictures side by side.",
       "choices": [
         {
           "value": "plate_photo",
           "label": "Classic plates, photos where there is none"
+        },
+        {
+          "value": "plate_sticker",
+          "label": "Classic plates, bird stickers where there is none"
+        },
+        {
+          "value": "sticker",
+          "label": "Bird stickers for every bird"
         },
         {
           "value": "plate_gen",
@@ -1078,7 +1086,7 @@
       "type": "select",
       "label": "Poses",
       "default": "perched",
-      "help": "Perched paints every bird on a branch. Mixed paints every other bird in flight, so a page is not eight profiles on branches; each pose is its own painting, so mixed paints more the first time.",
+      "help": "Perched paints every bird on a branch. Mixed paints every other bird in flight, so a page is not eight profiles on branches; each pose is its own painting, so mixed paints more the first time. Varied draws each bird's pose anew for every sheet, so the same birds are not always the ones in flight; a pose not painted yet shows the bird's other kept pose while it paints, and each bird ends up painted twice.",
       "show_if": {
         "layout": "cluster",
         "pictures": [
@@ -1094,6 +1102,10 @@
         {
           "value": "mixed",
           "label": "Mixed: every other bird in flight"
+        },
+        {
+          "value": "varied",
+          "label": "Varied: each bird drawn afresh for every sheet"
         }
       ],
       "advanced": true
@@ -1584,6 +1596,30 @@
         }
       },
       "advanced": true
+    },
+    {
+      "name": "art_reference",
+      "type": "select",
+      "label": "Painted from",
+      "default": "photo",
+      "advanced": true,
+      "show_if": {
+        "pictures": [
+          "plate_gen",
+          "gen"
+        ]
+      },
+      "help": "What the painter is shown for each bird. An iNaturalist photo is the first openly licensed one of the species. Its bird sticker (huashu-bird-sticker) is a clean, reviewed likeness, useful where the photos are poor. Changing this does not repaint birds already painted.",
+      "choices": [
+        {
+          "value": "photo",
+          "label": "An iNaturalist photo"
+        },
+        {
+          "value": "sticker",
+          "label": "Its bird sticker"
+        }
+      ]
     }
   ],
   "data_schema": {

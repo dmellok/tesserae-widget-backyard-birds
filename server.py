@@ -131,7 +131,9 @@ CAPTIONS = (
     "nouveau",
     "sonogram",
 )
-PICTURES = ("plate_photo", "plate_gen", "gen", "photo", "none")
+PICTURES = ("plate_photo", "plate_sticker", "sticker", "plate_gen", "gen", "photo", "none")
+STICKER_MODES = ("plate_sticker", "sticker")
+ART_REFS = ("photo", "sticker")
 # A photo shown among plates is toned to a warm monotone by default.
 PHOTO_TONES = ("toned", "light", "natural")
 # What the panel can show. A page is composed once and quantised per device
@@ -843,6 +845,63 @@ _EXTRA_PLATES: contextvars.ContextVar[dict[str, Any]] = contextvars.ContextVar(
 )
 
 
+# The pictures option when it asks for bird stickers, and what the painter is
+# shown, set per fetch so the picture and cluster paths need no new arguments.
+_STICKERS: contextvars.ContextVar[str] = contextvars.ContextVar("bb_stickers", default="")
+_ART_REF: contextvars.ContextVar[str] = contextvars.ContextVar("bb_art_ref", default="photo")
+_STICKER_MOD: list[Any] = []
+
+
+def _stickers() -> Any:
+    """stickers.py beside this file (huashu-bird-sticker), loaded by path once."""
+    if not _STICKER_MOD:
+        import importlib.util
+        import sys
+
+        name = "bb_stickers"
+        spec = importlib.util.spec_from_file_location(name, HERE / "stickers.py")
+        if spec is None or spec.loader is None:  # pragma: no cover
+            raise ImportError("stickers.py is missing")
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[name] = mod
+        spec.loader.exec_module(mod)
+        _STICKER_MOD.append(mod)
+    return _STICKER_MOD[0]
+
+
+def _sticker(
+    sci: str, size: int, data_dir: Path, levels: str = "colour"
+) -> dict[str, Any] | None:
+    """A bird's sticker on paper, the shape a classic plate takes."""
+    st = _stickers()
+    entry = st.lookup(sci)
+    if not entry:
+        return None
+    key = f"{st.key_of(entry)}_{size}"
+    flat = data_dir / "img" / f"{key}.jpg"
+    raw = None
+    if flat.exists():
+        with contextlib.suppress(OSError):
+            raw = flat.read_bytes()
+    if raw is None:
+        got = st.files(sci, data_dir, _cached_get, size, (243, 234, 214))
+        if not got:
+            return None
+        raw = got[0]
+        _write(flat, raw)
+    src = _render(raw, size, None, data_dir / "img" / f"{key}_r.jpg", levels)
+    if not src:
+        return None
+    paper = _paper(src, data_dir / "img" / f"{key}.paper", levels)
+    return {
+        "src": src,
+        "kind": "plate",
+        "credit": st.CREDIT,
+        "focus": [0.5, 0.5],
+        "paper": paper,
+    }
+
+
 def _extra_plates(data_dir: Path) -> dict[str, Any]:
     found = _read_json(data_dir / "plates_extra.json", {})
     return found if isinstance(found, dict) else {}
@@ -1399,7 +1458,7 @@ POSES = {
     "perched": "perched on a simple branch, the whole bird and its perch",
     "flight": "in flight with its wings spread, seen from the side a little below, the whole bird",
 }
-CLUSTER_POSES = ("perched", "mixed")
+CLUSTER_POSES = ("perched", "mixed", "varied")
 # What the page covers: to-day (BirdNET-Go's day as it fills), the last seven
 # days, or Fugleramme's rolling windows, in hours ("0" for all time).
 WINDOWS = ("today", "0.25", "0.5", "1", "3", "6", "12", "72", "week", "720", "0")
@@ -1649,9 +1708,15 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         )
         ref_credit = ""
     else:
-        image_url, ref_credit = (
-            _inat_ref(job["sci"], data_dir) if job.get("sci") else ("", "")
-        )
+        image_url, ref_credit = "", ""
+        if job.get("ref") == "sticker" and job.get("sci"):
+            got = _stickers().reference(job["sci"], data_dir, _cached_get)
+            if got:
+                image_url, ref_credit = got
+        if not image_url:
+            image_url, ref_credit = (
+                _inat_ref(job["sci"], data_dir) if job.get("sci") else ("", "")
+            )
         if not image_url:
             return fail("no openly licensed reference photo on iNaturalist")
         prompt = GEN_ONE.format(
@@ -1918,6 +1983,8 @@ def _generated(
     job = {"key": key, "style": style, "name": row["name"], "sci": row["sci"]}
     if pose != "perched":
         job["pose"] = pose
+    if _ART_REF.get() == "sticker":
+        job["ref"] = "sticker"
     started = _start_painting(job, data_dir, fal_key)
     return None, started, NOTE_PAINTING.format(name=f"the {row['name']}")
 
@@ -1978,6 +2045,15 @@ def _attach_pictures(
             # a painting kept from before still beats a photo among plates
             pic = _painting(key_of(row), size, data_dir, levels)
         row["pic"] = pic
+    if _STICKERS.get():
+        # a bird without a plate (or every bird) takes its sticker before a photo
+        unstuck = [r for r in rows if not r.get("pic")]
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            stuck = list(
+                pool.map(lambda r: _sticker(r["sci"], size, data_dir, levels), unstuck)
+            )
+        for row, pic in zip(unstuck, stuck, strict=True):
+            row["pic"] = pic
     missing = [r for r in rows if not r.get("pic")]
     with ThreadPoolExecutor(max_workers=6) as pool:
         photos = list(
@@ -2200,11 +2276,23 @@ def _specimen_sheet(
     if ai and not fal_key:
         notices.append(NOTE_NO_KEY)
     started = False
+    rng = random.Random()
     for i, b in enumerate(birds):
         slug = _slug(b["sci"] or b["name"])
-        # mixed: every other bird in flight, so the page is not all profiles on branches
-        pose = "flight" if poses == "mixed" and i % 2 == 1 else "perched"
+        # mixed: every other bird in flight, so the page is not all profiles on
+        # branches; varied: each bird's pose drawn afresh for this sheet, so the
+        # same birds are not always the ones in flight, and a pose not painted
+        # yet shows the bird's other kept pose while it paints
+        if poses == "varied":
+            pose = rng.choice(("perched", "flight"))
+        else:
+            pose = "flight" if poses == "mixed" and i % 2 == 1 else "perched"
         painting = _pkey(slug, style, pose)
+        other = (
+            _pkey(slug, style, "perched" if pose == "flight" else "flight")
+            if poses == "varied"
+            else ""
+        )
         b["key"] = None
         if ai:
             pic, did, note = _generated(
@@ -2220,6 +2308,8 @@ def _specimen_sheet(
             started = started or did
             if note and note not in notices:
                 notices.append(note)
+            if pic is None and other and (folder / f"{other}.jpg").exists():
+                painting, pic = other, {"kept": True}
             if pic is not None:
                 b["key"] = painting
                 credits.append(
@@ -2243,6 +2333,21 @@ def _specimen_sheet(
                 b["key"] = plate_key
                 src = str((pack[b["sci"]] or {}).get("source") or "Classic plate")
                 credits.append(f"{src} · public domain")
+                continue
+        # bird stickers: the sticker on white as <slug>--sticker.jpg with its own
+        # alpha beside it as the cut, so the white sticker edge is kept on the sheet
+        if _STICKERS.get():
+            st_key = f"{slug}--sticker"
+            if not (folder / f"{st_key}.jpg").exists():
+                got = _stickers().files(
+                    b["sci"], data_dir, _cached_get, 1200, (255, 255, 255)
+                )
+                if got:
+                    _write(folder / f"{st_key}.jpg", got[0])
+                    _write(folder / f"{st_key}.cut.png", got[1])
+            if (folder / f"{st_key}.jpg").exists():
+                b["key"] = st_key
+                credits.append(_stickers().CREDIT)
                 continue
         if (folder / f"{painting}.jpg").exists():
             b["key"] = painting
@@ -4090,6 +4195,8 @@ def _fetch(
     layout = _choice(options.get("layout"), LAYOUTS)
     caption = _choice(options.get("caption"), CAPTIONS)
     pictures = _choice(options.get("pictures"), PICTURES)
+    _STICKERS.set(pictures if pictures in STICKER_MODES else "")
+    _ART_REF.set(_choice(options.get("art_reference"), ART_REFS))
     photo_tone = _choice(options.get("photo_tone"), PHOTO_TONES)
     art_style = _choice(options.get("art_style"), GEN_STYLE_IDS)
     if art_style == "custom":
@@ -4337,20 +4444,26 @@ def _fetch(
         # as Fugleramme does, a bird the page cannot draw yet (classic plates
         # alone, and no plate or kept painting) does not take a place
         drawable = species
-        if pictures == "plate_photo" and cluster_style != "blend":
-            pack = _pack()
+        if pictures in ("plate_photo", *STICKER_MODES) and cluster_style != "blend":
+            pack = _pack() if pictures != "sticker" else {}
             folder = _gen_dir(data_dir)
             drawable = [
                 s
                 for s in species
                 if pack.get(s["sci"])
+                or (pictures in STICKER_MODES and _stickers().lookup(s["sci"]))
                 or (folder / f"{_slug(s['sci'] or s['name'])}--plate.jpg").exists()
                 or (
                     folder / f"{_pkey(_slug(s['sci'] or s['name']), art_style)}.jpg"
                 ).exists()
             ] or species
         pool = _ranked(drawable, ranking, cluster_n, ever, lead)
-        if cluster_style != "blend" and pictures in ("plate_gen", "gen", "plate_photo"):
+        if cluster_style != "blend" and pictures in (
+            "plate_gen",
+            "gen",
+            "plate_photo",
+            *STICKER_MODES,
+        ):
             ratio = cw / ch if cw and ch else 4 / 3
             if cluster_style == "numbered" and cluster_text == "key":
                 # the numbered plate shares the cell with its key
@@ -4377,7 +4490,9 @@ def _fetch(
                 _ranked(species, ranking, min(cluster_n, CLUSTER_MAX), ever),
                 min(cluster_n, CLUSTER_MAX),
                 cluster_every,
-                pictures if cluster_style == "blend" else "plate_photo",
+                pictures
+                if cluster_style == "blend" or pictures in STICKER_MODES
+                else "plate_photo",
                 art_style,
                 aspect,
                 base,
