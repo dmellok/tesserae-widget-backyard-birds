@@ -25,14 +25,14 @@
       "label": "fal.ai API key (AI paintings, experimental)",
       "secret": true,
       "default": "",
-      "help": "Only needed for the AI painting picture options. Each bird is painted once, from an openly licensed reference photo, in the background (it shows on a later refresh), and kept, at about US$0.04 a bird up to the daily limit below. Manage the paintings on this widget's page under Widgets. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
+      "help": "Optional when an image service is selected under Settings > Generative AI. On older Tesserae versions, this key is needed for AI paintings. Each bird is painted once, from an openly licensed reference photo, in the background (it shows on a later refresh), and kept, at about US$0.04 a bird up to the daily limit below. Manage the paintings on this widget's page under Widgets. Get a key at https://fal.ai/dashboard/keys; it is only sent to fal.run."
     },
     {
       "name": "gen_daily_cap",
       "type": "select",
       "label": "AI paintings per day",
       "default": "12",
-      "help": "The most new AI paintings (and cluster blends) made in a day, at about US$0.04 each. Paintings are kept, so a garden's birds only cost once; raise this to fill a new garden or a specimen sheet faster.",
+      "help": "The most new AI paintings (and cluster blends) made in a day, at about US$0.04 each on fal.ai or US$0.02 on kie.ai. Paintings are kept, so a garden's birds only cost once; raise this to fill a new garden or a specimen sheet faster.",
       "choices": [
         {
           "value": "6",

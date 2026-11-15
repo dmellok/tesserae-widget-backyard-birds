@@ -19,7 +19,7 @@
       <button type="submit" class="ghost bb-link">Reset today's count</button>
     </form>
     {% endif %}
-    {% if not has_key %}<strong>No fal.ai key yet:</strong> add one in this widget's settings.{% endif %}
+    {% if not has_key %}<strong>No image service key yet:</strong> add one under Settings &gt; Generative AI, or a fal.ai key in this widget's settings.{% endif %}
     {% if g.running %}Painting now: {{ g.running|join(', ')|replace('_', ' ') }}.{% endif %}
   </div>
   <div id="bb-ticker" class="bb-ticker" hidden aria-live="polite" data-progress="{{ url_for('backyard_birds_admin.progress') }}">

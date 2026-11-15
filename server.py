@@ -99,8 +99,8 @@ GEN_RETRY_S = 6 * 3600
 
 ERR_UNREACHABLE = "Couldn't reach BirdNET-Go at {url}."
 ERR_AUTH = "BirdNET-Go asked for a login. Add an API token in this cell's settings."
-NOTE_NO_KEY = "AI paintings need a fal.ai key in this widget's settings."
-NOTE_PAINTING = "Painting {name} with fal.ai; it appears on a later refresh."
+NOTE_NO_KEY = "AI paintings need a key under Settings > Generative AI, or a fal.ai key in this widget's settings."
+NOTE_PAINTING = "Painting {name}; it appears on a later refresh."
 NOTE_GEN_FAILED = "AI painting of {name} failed: {why}"
 NOTE_GEN_CAP = "AI paintings: today's limit of {cap} is used up."
 
@@ -1668,6 +1668,60 @@ def _drop_derived(folder: Path, key: str) -> None:
                     f.unlink()
 
 
+def _painting_key(settings: dict[str, Any] | None) -> str:
+    own = str((settings or {}).get("fal_api_key") or "").strip()
+    try:
+        from app import fal, kie_images
+    except ImportError:
+        return own
+    return (
+        fal.painting_key(settings)
+        if kie_images.configuration()[0] != "auto"
+        else own or fal.painting_key(settings)
+    )
+
+
+def _paid_task(data_dir: Path, key: str) -> bool:
+    return any((_gen_dir(data_dir) / "kie_tasks" / key).glob("*.json"))
+
+
+def _shared_picture(
+    job: dict[str, Any], folder: Path, fal_key: str, prompt: str, image_url: str
+) -> tuple[bytes, str] | None:
+    try:
+        from app import artwork, fal, kie_images
+    except ImportError:
+        return None
+    service, _ = kie_images.configuration()
+    tasks = folder / "kie_tasks" / job["key"]
+    saved = any(tasks.glob("*.json"))
+    if service == "auto" and fal_key != fal.DIRECT_ONLY and not saved:
+        return None
+
+    def pay(cents: int, model: str) -> None:
+        def debit() -> None:
+            if _budget_used(folder) >= _CAP.get():
+                raise artwork.ArtworkError("the day's painting limit is reached")
+            _spend_budget(folder)
+
+        artwork.charge("backyard_birds", "paintings", cents, model, debit)
+
+    painter = fal.FalClient(fal_key, charge=pay, task_dir=tasks, timeout=GEN_TIMEOUT_S)
+    raw = painter.generate(
+        "nano_banana",
+        prompt,
+        refs=[image_url],
+        aspect=job.get("aspect") or "3:4",
+        retries=0,
+    )
+    model = (
+        "nano_banana_kie"
+        if service == "kie" or saved
+        else painter.direct_model("nano_banana") or "nano_banana"
+    )
+    return raw, fal.label_of(model)
+
+
 def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     """Make one bird's painting and keep it under job["key"]. Blocking: run it
     through _start_painting. ``job`` is {key, style, name, sci}. Returns None,
@@ -1725,36 +1779,46 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
             style=how,
             pose=POSES.get(str(job.get("pose") or "perched"), POSES["perched"]),
         )
-    _spend_budget(folder)
-    body = json.dumps(
-        {
-            "prompt": prompt,
-            "image_urls": [image_url],
-            "num_images": 1,
-            "output_format": "jpeg",
-            "aspect_ratio": job.get("aspect") or "3:4",
-        }
-    ).encode()
-    answer, err = _json(
-        FAL_EDIT,
-        fal_key,
-        auth_scheme="Key",
-        body=body,
-        timeout=GEN_TIMEOUT_S,
-        detail=True,
-    )
-    if err:
-        if err.startswith(("HTTP 401", "HTTP 403")):
-            err = "fal.ai refused the key or the account has no balance (" + err + ")"
-        return fail(err if err.startswith("fal") else f"fal.ai answered {err}")
-    images = answer.get("images") if isinstance(answer, dict) else None
-    out_url = str(images[0].get("url") or "") if images else ""
-    raw, err = (
-        _http(out_url, accept="image/*", timeout=60) if out_url else (None, "no image")
-    )
-    if not raw:
-        return fail(f"fal.ai sent no picture ({err})")
-    credit = f"AI painting, {label.split(' (')[0].lower()} (fal.ai nano-banana)"
+    try:
+        shared = _shared_picture(job, folder, fal_key, prompt, image_url)
+    except Exception as shared_error:
+        return fail(str(shared_error)[:300])
+    raw: bytes | None
+    if shared is not None:
+        raw, provider_label = shared
+        out_url = "data:image/png;base64," + base64.b64encode(raw).decode()
+    else:
+        _spend_budget(folder)
+        body = json.dumps(
+            {
+                "prompt": prompt,
+                "image_urls": [image_url],
+                "num_images": 1,
+                "output_format": "jpeg",
+                "aspect_ratio": job.get("aspect") or "3:4",
+            }
+        ).encode()
+        answer, err = _json(
+            FAL_EDIT,
+            fal_key,
+            auth_scheme="Key",
+            body=body,
+            timeout=GEN_TIMEOUT_S,
+            detail=True,
+        )
+        if err:
+            if err.startswith(("HTTP 401", "HTTP 403")):
+                err = "fal.ai refused the key or the account has no balance (" + err + ")"
+            return fail(err if err.startswith("fal") else f"fal.ai answered {err}")
+        images = answer.get("images") if isinstance(answer, dict) else None
+        out_url = str(images[0].get("url") or "") if images else ""
+        raw, err = (
+            _http(out_url, accept="image/*", timeout=60) if out_url else (None, "no image")
+        )
+        if not raw:
+            return fail(f"fal.ai sent no picture ({err})")
+        provider_label = "fal.ai nano-banana"
+    credit = f"AI painting, {label.split(' (')[0].lower()} ({provider_label})"
     if job.get("collage"):
         credit += ", blended from each bird's own AI painting after iNaturalist photos"
     elif ref_credit:
@@ -1778,15 +1842,29 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
         meta["tag"] = job.get("tag", "")
         # where each bird sat on the collage, for labels over the blend
         meta["boxes"] = job.get("boxes") or []
-    _write(folder / f"{key}.json", json.dumps(meta).encode())
+    meta_bytes = json.dumps(meta).encode()
+    _write(folder / f"{key}.json", meta_bytes)
     _write(img, raw)
+    if shared is not None:
+        try:
+            if img.read_bytes() != raw or (folder / f"{key}.json").read_bytes() != meta_bytes:
+                raise OSError("incomplete save")
+        except OSError:
+            return fail("the picture could not be saved; its paid task is kept for retry")
     _drop_derived(folder, key)
     with contextlib.suppress(OSError):
         err_path.unlink()
+    if shared is not None:
+        import shutil
+        shutil.rmtree(folder / "kie_tasks" / key, ignore_errors=True)
     if not job.get("collage"):
         # the cut-out: the painting with its paper removed, from the model's own
         # copy of the picture; best effort, the sheet cuts it out itself without
-        cut = _cut_out(out_url, fal_key)
+        mask_key = fal_key
+        if shared is not None:
+            from app import fal
+            mask_key = fal.resolve_key()
+        cut = _cut_out(out_url, mask_key) if mask_key else None
         if cut:
             _write(folder / f"{key}.cut.png", cut)
     return None
@@ -1889,8 +1967,8 @@ def _start_batch(jobs: list[dict[str, Any]], data_dir: Path, fal_key: str) -> bo
     def run() -> None:
         try:
             for job in jobs:
-                if _budget_used(folder) >= _CAP.get():
-                    break
+                if _budget_used(folder) >= _CAP.get() and not _paid_task(data_dir, job["key"]):
+                    continue
                 if not _start_painting(job, data_dir, fal_key):
                     continue
                 while True:
@@ -1953,7 +2031,7 @@ def _may_paint(
         return False, NOTE_GEN_FAILED.format(name=label, why=failed.get("why"))
     if not (allow_new and fal_key):
         return False, None
-    if _budget_used(folder) >= _CAP.get():
+    if _budget_used(folder) >= _CAP.get() and not _paid_task(data_dir, key):
         return False, NOTE_GEN_CAP.format(cap=_CAP.get())
     return True, None
 
@@ -4262,7 +4340,7 @@ def _fetch(
     min_conf = _int(options.get("min_confidence"), 70, 10, 99)
     refresh_min = _int(options.get("refresh_min"), 5, 1, 120)
     label = str(options.get("label") or "").strip()
-    fal_key = str((settings or {}).get("fal_api_key") or "").strip()
+    fal_key = _painting_key(settings)
     now = datetime.now(_tz(options))
 
     data_dir = Path(ctx.get("data_dir") or ".")
@@ -4793,7 +4871,7 @@ def blueprint() -> Any:
         return got if isinstance(got, dict) else {}
 
     def fal_key() -> str:
-        return str(settings().get("fal_api_key") or "").strip()
+        return _painting_key(settings())
 
     @bp.before_request
     def daily_cap() -> None:
@@ -4812,7 +4890,7 @@ def blueprint() -> Any:
         key = fal_key()
         folder = _gen_dir(data_dir())
         if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
+            flash("Add a key under Settings > Generative AI, or a fal.ai key in this widget's settings first.", "warn")
         elif _budget_used(folder) >= _CAP.get():
             flash(
                 f"Today's limit of {_CAP.get()} paintings is used up. Raise it in this widget's settings.",
@@ -5047,7 +5125,7 @@ def blueprint() -> Any:
             abort(400)
         key = fal_key()
         if not key:
-            flash("Add a fal.ai key in this widget's settings first.", "warn")
+            flash("Add a key under Settings > Generative AI, or a fal.ai key in this widget's settings first.", "warn")
             return back()
         folder = _gen_dir(data_dir())
         birds = _known_birds(data_dir())
