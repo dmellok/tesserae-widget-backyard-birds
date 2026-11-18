@@ -50,13 +50,13 @@ from __future__ import annotations
 import base64
 import contextlib
 import contextvars
-import fcntl
 import hashlib
 import io
 import json
 import os
 import random
 import re
+import sys
 import threading
 import time
 import urllib.error
@@ -1639,17 +1639,81 @@ def _read_json(path: Path, default: Any) -> Any:
     return default
 
 
+@contextlib.contextmanager
+def _file_lock(path: Path) -> Any:
+    """Hold ``path`` as a lock across threads and server processes. ``fcntl``
+    does not exist on Windows, and importing it at the top stopped the widget
+    loading there, so Windows locks a byte of the file instead (as the host's
+    own task lock does)."""
+    with path.open("ab") as lock:
+        if sys.platform == "win32":
+            import errno
+            import msvcrt
+
+            fd = lock.fileno()
+            while True:
+                os.lseek(fd, 0, os.SEEK_SET)
+                try:
+                    # gives up after about ten seconds; a picture takes longer
+                    msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+                    break
+                except OSError as err:
+                    if err.errno not in (errno.EACCES, errno.EDEADLK):
+                        raise
+            try:
+                yield
+            finally:
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+
+
+class _NotBought(RuntimeError):
+    """A paid request that certainly bought nothing: refused before it was
+    sent (the day's limit, a spending ceiling, no key) or turned down by the
+    provider (a bad key, no balance, a malformed request)."""
+
+
+# What the host's painter says when the provider turned the request down, or
+# when it never sent one. A 408 and every 5xx are left out: the provider may
+# have painted and been paid before the answer was lost.
+_REFUSED_RE = re.compile(r"\bHTTP 4(?!08)\d\d\b")
+_UNSENT = ("no fal.ai key", "no openai key", "no gemini key", "no reference picture")
+# The request was answered and only the picture is missing: it was paid for.
+_ANSWERED = ("the picture could not be fetched", "fal.ai sent")
+
+
+def _nothing_bought(err: BaseException) -> bool:
+    """Whether a failed paid request certainly cost nothing, so its marker
+    need not hold the bird back. Anything else (a timeout, a dropped
+    connection, a 5xx, a picture that could not be fetched) may have been
+    paid for and is kept."""
+    if isinstance(err, _NotBought):
+        return True
+    # a direct OpenAI or Gemini call the provider refused over the key
+    if getattr(err.__cause__, "auth", False):
+        return True
+    text = str(err)
+    if text.startswith(_ANSWERED):
+        return False
+    return bool(_REFUSED_RE.search(text)) or text.startswith(_UNSENT)
+
+
 def _budget_used(folder: Path) -> int:
     used = _read_json(folder / "budget.json", {})
     return int(used.get(time.strftime("%Y-%m-%d"), 0)) if isinstance(used, dict) else 0
 
 
-def _spend_budget(folder: Path) -> None:
+def _spend_budget(folder: Path, by: int = 1) -> None:
     today = time.strftime("%Y-%m-%d")
     path = folder / "budget.json"
     tmp = path.with_suffix(".tmp")
     with tmp.open("wb") as out:
-        out.write(json.dumps({today: _budget_used(folder) + 1}).encode())
+        out.write(json.dumps({today: max(0, _budget_used(folder) + by)}).encode())
         out.flush()
         os.fsync(out.fileno())
     tmp.replace(path)
@@ -1706,7 +1770,15 @@ def _shared_picture(
     def pay(cents: int, model: str) -> None:
         _pay(folder, cents, model)
 
-    painter = fal.FalClient(fal_key, charge=pay, task_dir=tasks, timeout=GEN_TIMEOUT_S)
+    def unpay(cents: int, model: str) -> None:
+        _unpay(folder, cents, model)
+
+    try:
+        painter = fal.FalClient(
+            fal_key, charge=pay, refund=unpay, task_dir=tasks, timeout=GEN_TIMEOUT_S
+        )
+    except TypeError:  # a host from before refunds
+        painter = fal.FalClient(fal_key, charge=pay, task_dir=tasks, timeout=GEN_TIMEOUT_S)
 
     def generate() -> bytes:
         return painter.generate(
@@ -1727,23 +1799,50 @@ def _shared_picture(
 
 
 def _pay(folder: Path, cents: int, model: str, *, painting: bool = True) -> None:
+    """Charge one request before it is sent. Raises :class:`_NotBought` when
+    the day's limit or a shared ceiling refuses it: nothing was asked for."""
+
     def debit() -> None:
         if painting and _budget_used(folder) >= _CAP.get():
-            raise RuntimeError("the day's painting limit is reached")
+            raise _NotBought("the day's painting limit is reached")
         if painting:
             _spend_budget(folder)
 
-    with (folder / "budget.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with _file_lock(folder / "budget.lock"):
         try:
             from app import artwork
         except ImportError:
             artwork = None
         charge = getattr(artwork, "charge", None)
-        if charge is not None:
-            charge("backyard_birds", "paintings", cents, model, debit)
-        else:
+        if charge is None:
             debit()
+            return
+        try:
+            charge("backyard_birds", "paintings", cents, model, debit)
+        except _NotBought:
+            raise
+        except Exception as err:  # the host's ceiling: refused before any request
+            raise _NotBought(str(err)) from err
+
+
+def _unpay(folder: Path, cents: int, model: str, *, painting: bool = True) -> None:
+    """Hand back a charge for a request the provider definitely refused, in
+    the widget's day and in the host's ledger."""
+
+    def credit() -> None:
+        if painting:
+            _spend_budget(folder, -1)
+
+    with _file_lock(folder / "budget.lock"):
+        try:
+            from app import artwork
+        except ImportError:
+            artwork = None
+        refund = getattr(artwork, "refund", None)
+        if refund is not None:
+            refund("backyard_birds", "paintings", cents, model, credit)
+        else:
+            credit()
 
 
 def _once(folder: Path, submit: Any) -> bytes:
@@ -1759,15 +1858,22 @@ def _once(folder: Path, submit: Any) -> bytes:
         out.write(str(time.time()).encode())
         out.flush()
         os.fsync(out.fileno())
-    raw = submit()
+    try:
+        raw = submit()
+    except Exception as err:
+        if _nothing_bought(err):
+            # refused, or never sent: the marker would hold the bird back for
+            # six hours over a request that cost nothing
+            with contextlib.suppress(OSError):
+                pending.unlink()
+        raise
     picture.write_bytes(raw)
     return raw
 
 
 def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
     folder = _gen_dir(data_dir)
-    with (folder / f"{job['key']}.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    with _file_lock(folder / f"{job['key']}.lock"):
         image = folder / f"{job['key']}.jpg"
         if job.get("repaint_at") and (not image.exists() or image.stat().st_mtime < job["repaint_at"]):
             tasks = folder / "kie_tasks" / job["key"]
@@ -1777,9 +1883,13 @@ def _paint(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | None:
                 kie_images = None
             if kie_images is not None:
                 try:
-                    retry = getattr(kie_images, "retry", None)
-                    if retry is not None:
-                        retry(tasks)
+                    # an explicit Repaint forgets saved tasks with nothing to
+                    # collect; ``retry`` is the name an earlier host used
+                    clear = getattr(kie_images, "clear_unfinished", None) or getattr(
+                        kie_images, "retry", None
+                    )
+                    if clear is not None:
+                        clear(tasks)
                 except Exception as err:
                     return str(err)
             submitted = tasks / "submitted"
@@ -1881,9 +1991,15 @@ def _paint_locked(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | No
                 detail=True,
             )
             if err:
+                refused = bool(_REFUSED_RE.match(err))
                 if err.startswith(("HTTP 401", "HTTP 403")):
                     err = "fal.ai refused the key or the account has no balance (" + err + ")"
-                raise RuntimeError(err if err.startswith("fal") else f"fal.ai answered {err}")
+                why = err if err.startswith("fal") else f"fal.ai answered {err}"
+                if refused:
+                    # turned down, so nothing was painted: the charge goes back
+                    _unpay(folder, 4, "nano_banana")
+                    raise _NotBought(why)
+                raise RuntimeError(why)
             images = answer.get("images") if isinstance(answer, dict) else None
             out_url = str(images[0].get("url") or "") if images else ""
             raw, err = (
@@ -1946,7 +2062,12 @@ def _paint_locked(job: dict[str, Any], data_dir: Path, fal_key: str) -> str | No
 
         def cutout() -> bytes:
             _pay(folder, 2, "birefnet", painting=False)
-            return _cut_out(out_url, mask_key) or b""
+            made = _cut_out(out_url, mask_key)
+            if not made:
+                # not kept as a result: an empty one would be read back as
+                # the cut-out for good
+                raise RuntimeError("no cut-out")
+            return made
 
         try:
             cut = _once(cut_folder, cutout) if mask_key else None
